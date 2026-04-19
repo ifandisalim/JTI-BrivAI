@@ -30,11 +30,7 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Goal:** A working Android app shell in-repo, Supabase wired for dev/prod-ish configs, and a repeatable way to ship an internal build.
 
-**Child spec topics (to expand or split into files):**
-
-- Repo layout (app + shared packages + Supabase folder conventions).
-- Expo Android runbook (devices, env vars).
-- “Definition of ready” for starting feature work (secrets, EAS/project IDs as applicable).
+**Detailed spec (Epic 125, JTI-133, JTI-134):** [`docs/specs/mvp/foundation-epic-125.md`](foundation-epic-125.md)
 
 ---
 
