@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
+    "android": "npx expo run:android",
+    "android:go": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
