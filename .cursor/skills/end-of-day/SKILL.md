@@ -25,13 +25,15 @@ Write it like a note to a colleague taking over the shift — enough to orient t
 
 ## Step 2 — Save the log
 
-Save to:
+Path (one file per calendar day):
 
 ```
 01 Daily Logs/[C] YYYY-MM-DD.md
 ```
 
-Use this format:
+### If the file does **not** exist yet
+
+Create it with **YAML frontmatter once at the top** (then the rest of the body):
 
 ```markdown
 ---
@@ -44,20 +46,34 @@ date: YYYY-MM-DD
 
 ## What We Worked On
 - [project — what was done]
-- [project — what was done]
 
 ## What Was Built or Changed
 - [specific file or decision]
-- [specific file or decision]
 
 ## Still Open
-- [thing that's mid-flight or unresolved]
+- [only if something is actually unresolved]
 
 ## Start Here Tomorrow
-[1–2 sentences on the best place to pick up next session]
+[1–2 sentences]
 ```
 
-Only include "Still Open" if there's actually something unresolved. Don't invent open items.
+Only include **Still Open** when there is a real open item. Do not invent open items.
+
+### If the file **already exists** (same day, second wrap-up, or re-run)
+
+**Never overwrite or truncate** the existing log. **Append** a new block at the **end** of the file:
+
+1. Add a horizontal rule: `---`
+2. Add a session heading with time if you know it (otherwise `## Session (continued)`), e.g. `## Session — 21:45`
+3. Under that heading, use **`###`** subsections for this session only:
+   - `### What We Worked On`
+   - `### What Was Built or Changed`
+   - `### Still Open` (omit if nothing real)
+   - `### Start Here Tomorrow`
+
+Do **not** add a second YAML frontmatter block. Preserve everything already in the file.
+
+**Why:** Multiple sessions or wrap-ups on the same day stay in one daily file without losing earlier notes.
 
 ## Step 3 — Update CLAUDE.md folder structure
 
