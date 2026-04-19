@@ -1,14 +1,32 @@
 import { Stack, router } from 'expo-router';
+import { useCallback } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
+import { supabase } from '@/src/lib/supabase';
 
 const DEMO_BOOK_ID = 'test-book';
 
 export default function LibraryScreen() {
+  const onSignOut = useCallback(async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    router.replace('/sign-in');
+  }, []);
+
   return (
     <>
-      <Stack.Screen options={{ title: 'Library' }} />
+      <Stack.Screen
+        options={{
+          title: 'Library',
+          headerRight: () => (
+            <Pressable onPress={() => void onSignOut()} hitSlop={12} style={styles.headerButton}>
+              <Text style={styles.headerButtonText}>Sign out</Text>
+            </Pressable>
+          ),
+        }}
+      />
       <View style={styles.container}>
         <Text style={styles.title}>Library (coming)</Text>
         <Text style={styles.caption}>Opens the reader with a hardcoded book id to verify dynamic routes.</Text>
@@ -54,5 +72,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  headerButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  headerButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2f95dc',
   },
 });
