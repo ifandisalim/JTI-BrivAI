@@ -24,6 +24,18 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 - **Spec owns:** goals, edge cases, data model intent, API shape, sequencing, and acceptance criteria detail.
 - **Linear owns:** status, priority, owner, cycle, dependencies, short **Definition of done** (testable), and a **link back** to this spec.
 
+### UI design fidelity (`resources/`)
+
+**Visual source of truth (screens):** `resources/BrivAI designs/` — PNG frames (layout, color, type). Use the **screens that match the flow** you are building (not every PNG applies to every epic).
+
+**Written feature intent (PDFs):** `resources/BrivAI Features/` — including per-area folders (for example `Core Summarization/`). Treat these as **product and layout hints**. If a PDF disagrees with **Frozen MVP decisions** in this file, **this README wins**.
+
+**How to make the app follow the UI during implementation**
+
+1. **Name the reference in the spec or issue** — e.g. “Match `Section 1.png` + `Frame 1000002389.png` for library list density.” Vague “see designs folder” is easy to skip.  
+2. **Definition of done** — for UI tickets, add a testable line: “Side-by-side with reference PNG on a typical phone width; list intentional deviations in the PR.”  
+3. **Optional but practical** — pull recurring **colors, radii, spacing, type sizes** from the PNGs into a single theme module in `apps/mobile` so new screens do not drift one-off.
+
 ---
 
 ## Epic: Foundation and delivery spine
@@ -65,6 +77,8 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 ## Epic: PDF upload and validation
 
 **Goal:** Select a PDF, upload reliably, validate type/size/pages, and create a durable “book” record for downstream processing.
+
+**Detailed spec (Epic 128, JTI-141–JTI-143):** `[docs/specs/mvp/pdf-upload-epic-128.md](pdf-upload-epic-128.md)`
 
 ---
 
