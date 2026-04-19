@@ -25,8 +25,9 @@ Keep the user moving through that loop. If there is no goal yet, help set one. I
 ## Folder Structure
 
 ```
-01 Daily Logs/        — session logs (end of day)
+01 Daily Logs/        — session logs (end of day); assistant logs named `[C] YYYY-MM-DD.md`
 02 Projects/          — one folder per project
+.cursor/skills/       — Cursor skill definitions (e.g. end-of-day, good-morning)
 ```
 
 ---
