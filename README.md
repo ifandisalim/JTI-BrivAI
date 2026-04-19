@@ -60,9 +60,37 @@ npm run web
 
 Useful when you only need to confirm the JS bundle and navigation without the Android toolchain.
 
-## Environment variables
+## Environment variables (Supabase — JTI-134)
 
-Supabase and other client env vars are introduced in **Linear JTI-134**. When that lands, copy **`apps/mobile/.env.example`** to **`apps/mobile/.env`** and fill in **public** values only (never commit real secrets or service role keys). Variables use the **`EXPO_PUBLIC_*`** prefix so Expo can inline them for the client.
+1. In the **Supabase dashboard**, create or open a dev project and copy the **Project URL** and the **anon public** key (safe for the mobile app when Row Level Security is enforced on your tables later).
+2. From the repo root, copy the template:
+
+   ```bash
+   cp apps/mobile/.env.example apps/mobile/.env
+   ```
+
+3. Edit **`apps/mobile/.env`** and set:
+
+   - **`EXPO_PUBLIC_SUPABASE_URL`** — e.g. `https://<ref>.supabase.co`
+   - **`EXPO_PUBLIC_SUPABASE_ANON_KEY`** — the **anon** key only
+
+**Never** put the **service role** key in the app or in `.env` that ships to clients; that key bypasses RLS and belongs on servers only.
+
+**Git:** **`apps/mobile/.env`** is ignored (see `apps/mobile/.gitignore` and the root `.gitignore`). **`apps/mobile/.env.example`** stays in git with placeholders only.
+
+Restart Metro after changing env (`npx expo start --clear` if values look stale).
+
+## Supabase CLI (`supabase/` at repo root)
+
+Database migrations and Edge Function source for this project live under **`supabase/`** (from `npx supabase init`). **Local Docker** (`supabase start`) is optional; day-to-day dev can use your **cloud** Supabase project via the env vars above.
+
+## Future auth redirects (for the Auth epic)
+
+When magic links or OAuth land, Supabase will need allowed redirect URLs. Plan for a custom scheme such as **`brivai://auth-callback`** and add it in the Supabase Auth URL configuration when that work starts.
+
+## Row Level Security (RLS)
+
+**All user-owned tables must have RLS enabled** before any sensitive data ships. Foundation does not add app tables yet; this is a reminder for later migrations.
 
 ## What “Foundation” means here (JTI-133)
 
@@ -73,10 +101,12 @@ Supabase and other client env vars are introduced in **Linear JTI-134**. When th
 ## Smoke check (about 2 minutes)
 
 1. Install dependencies (`cd apps/mobile && npm install`).
-2. On Android: `npm run android` (or `npm run android:go` with Expo Go).
-3. Confirm you land on **Sign in (coming in Auth epic)**.
-4. Tap **Go to Library**, then **Open reader (test-book)** and confirm **`bookId`** shows `test-book`.
-5. Use the **system back** gesture or button until you exit or return to the sign-in screen without getting stuck.
+2. Copy **`apps/mobile/.env.example`** to **`apps/mobile/.env`** and set **real** `EXPO_PUBLIC_SUPABASE_*` values from your Supabase project (see **Environment variables** above).
+3. On Android: `npm run android` (or `npm run android:go` with Expo Go).
+4. Confirm you land on **Sign in (coming in Auth epic)**.
+5. **In dev builds only** (`__DEV__`), check the **top banner**: it should show **Supabase: OK** after `getSession()` runs, or a clear **missing env** / **error** message — there should be **no unhandled promise rejection** in Metro/logs from this check.
+6. Tap **Go to Library**, then **Open reader (test-book)** and confirm **`bookId`** shows `test-book`.
+7. Use the **system back** gesture or button until you exit or return to the sign-in screen without getting stuck.
 
 ## Troubleshooting
 
