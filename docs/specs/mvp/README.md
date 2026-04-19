@@ -88,6 +88,10 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Risk callout:** scanned PDFs are not MVP-complete; must fail clearly.
 
+**Detailed spec (Epic 129, JTI-144–JTI-149):** `[docs/specs/mvp/summarization-epic-129.md](summarization-epic-129.md)`
+
+**Developer prompt config (summaries):** `[config/summaryPrompt.ts](../../../config/summaryPrompt.ts)` — single source for wording the model uses; see summarization spec §2.
+
 ---
 
 ## Epic: Reader UI
