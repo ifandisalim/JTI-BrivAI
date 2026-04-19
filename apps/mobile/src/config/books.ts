@@ -11,5 +11,8 @@ export const BOOK_STATUS = {
 
 export type BookStatus = (typeof BOOK_STATUS)[keyof typeof BOOK_STATUS];
 
-/** MVP max binary size (bytes); server will re-enforce in JTI-142. */
+/** MVP max binary size (bytes); server re-enforces in Edge `validate-book-pdf` (JTI-142). */
 export const BOOK_MAX_BYTES = 50 * 1024 * 1024;
+
+/** MVP max PDF pages; server re-enforces in Edge `validate-book-pdf` (JTI-142). */
+export const BOOK_MAX_PAGES = 300;
