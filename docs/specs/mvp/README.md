@@ -13,6 +13,7 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 - **Limits:** max **50 MB** file size; max **300** PDF pages.
 - **First-load summarization:** prioritize **first 10** PDF pages, then background fill.
 - **Credits:** **free credits only** in MVP; **no purchases**; show a clear **out of credits** state.
+- **Starter credits (default):** **50 pages** worth of summarization (meaning: enough credits to summarize **50 PDF pages** at the configured **per-page credit cost**). This must be driven by a **single documented setting** (for example one env var, one config module constant, or one Supabase settings row—pick one approach and do not scatter magic numbers).
 - **Library:** **full history** of uploaded books (not “last book only”).
 - **Admin:** no admin UI; operate via Supabase dashboard / SQL as needed.
 - **Timeline target:** ~**2 weeks** solo build — scope cuts win over polish.
@@ -48,6 +49,10 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 ## Epic: Credits
 
 **Goal:** Starter credits, deterministic deductions aligned to **per-page summarization**, transparent balance UX, and a hard stop when credits are exhausted.
+
+**Starter grant (MVP default):** grant **50 pages** worth on first signup, implemented as **credits = 50 × per_page_credit_cost** (if per-page cost is 1 credit, that is simply **50 credits**—but keep the “pages” meaning explicit in naming and docs so changing economics later does not confuse you).
+
+**Settings rule:** `STARTER_FREE_PAGES` (name can vary) lives in **one place** alongside `CREDITS_PER_SUMMARIZED_PAGE` (or equivalent). Admin UI is still out of scope; “settings” means **developer-controlled configuration**, not an in-app settings screen—unless you explicitly add one later.
 
 ---
 
