@@ -1,0 +1,2 @@
+-- Optional seed data for local `supabase db reset`.
+-- Foundation epic: intentionally empty; add INSERTs when fixtures are needed.
