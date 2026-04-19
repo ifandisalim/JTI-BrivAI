@@ -1,7 +1,11 @@
 ---
-
-## name: good-morning
-description: Morning orientation that recaps recent work and helps decide what to work on. Trigger this skill whenever the user says "good morning", "morning", "let's get to work", "ready to start", "start my day", "what should I work on?", or anything that signals they're beginning a new work session. Use it proactively — if a user opens with a greeting at the start of a session, run this skill before doing anything else.
+name: good-morning
+description: >-
+  Morning orientation that recaps recent work and helps decide what to work on.
+  Trigger when the user says "good morning", "morning", "let's get to work",
+  "ready to start", "start my day", "what should I work on?", or when beginning
+  a work session. Use proactively at session start after a greeting.
+---
 
 # Good Morning
 
