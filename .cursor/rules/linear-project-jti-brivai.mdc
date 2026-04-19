@@ -1,0 +1,24 @@
+---
+description: JTI BrivAI Linear project—use when creating, triaging, or discussing issues for this repo.
+alwaysApply: true
+---
+
+# Linear project (JTI BrivAI)
+
+- **Issues (project):** https://linear.app/jtienterprise/project/jti-brivai-1a409a434353/issues
+- **Always attach** newly created Linear issues to this project (name **JTI-BrivAI**, slug `jti-brivai-1a409a434353`, or its project ID from Linear) unless the user explicitly says otherwise.
+
+## Specs vs Linear issues (how we work)
+
+- **Specs are the source of truth** for intent, edge cases, sequencing, and detailed acceptance criteria. Prefer specs under `docs/specs/` (MVP index: `docs/specs/mvp/README.md`).
+- **Linear is the source of truth** for execution: status, priority, ordering, dependencies, cycles, ownership, and “what’s next.”
+- **Every Linear issue (and Epic parent issue)** should include a **Spec** pointer:
+  - Link to the GitHub file URL on `main` **or** a repo-relative path both humans and agents understand, ideally with a **section anchor** (example: `docs/specs/mvp/README.md#epic-summarization`).
+  - Use a stable **Spec ID** inside the spec when helpful (example: `MVP-SUM-003`) and repeat that ID in the Linear title/description when it improves searchability.
+- **Do not paste huge designs into Linear.** Put the detail in the spec; keep the issue to **Definition of done (testable)**, **scope boundaries**, and links.
+
+## Issue quality bar
+
+- When creating or refining **epics, issues, or acceptance criteria**, tie work to the **agreed phase** (MVP vs later). Do not silently expand MVP scope.
+- Each issue should lead with **plain-English user intent** and **definition of done**, then technical notes or implementation hints as needed.
+- Prefer **small, testable slices** (vertical cuts) over broad “implement the app” tickets.
