@@ -1,13 +1,22 @@
-import { Stack, router } from 'expo-router';
+import { Stack, router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
+import { BOOK_STATUS } from '@/src/config/books';
 import { CREDITS_PER_SUMMARIZED_PAGE } from '@/src/config/credits';
 import { useCreditBalance } from '@/src/hooks/useCreditBalance';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
 
 const DEMO_BOOK_ID = 'test-book';
+
+type LibraryBookRow = {
+  id: string;
+  title: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+};
 
 /** Dev-only: stable key prefix so repeated taps use new idempotency keys (JTI-140 / spec §8). */
 const DEV_CONSUME_KEY_PREFIX = 'dev:jti140:library:';
@@ -16,6 +25,36 @@ export default function LibraryScreen() {
   const { balance, loadState, loadError, refresh } = useCreditBalance();
   const [consumeBusy, setConsumeBusy] = useState(false);
   const [consumeMessage, setConsumeMessage] = useState<string | null>(null);
+  const [books, setBooks] = useState<LibraryBookRow[]>([]);
+  const [booksLoading, setBooksLoading] = useState(false);
+  const [booksError, setBooksError] = useState<string | null>(null);
+
+  const loadBooks = useCallback(async () => {
+    if (!isSupabaseConfigured() || !supabase) {
+      setBooks([]);
+      setBooksError(null);
+      return;
+    }
+    setBooksLoading(true);
+    setBooksError(null);
+    const { data, error } = await supabase
+      .from('books')
+      .select('id, title, status, error_message, created_at')
+      .order('created_at', { ascending: false });
+    setBooksLoading(false);
+    if (error) {
+      setBooksError(error.message);
+      setBooks([]);
+      return;
+    }
+    setBooks((data ?? []) as LibraryBookRow[]);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadBooks();
+    }, [loadBooks]),
+  );
 
   const onSignOut = useCallback(async () => {
     if (supabase) {
@@ -106,7 +145,52 @@ export default function LibraryScreen() {
           )}
         </View>
 
-        <Text style={styles.title}>Library (coming)</Text>
+        <Pressable style={styles.addBookButton} onPress={() => router.push('/upload-pdf')}>
+          <Text style={styles.addBookButtonText}>Add book</Text>
+        </Pressable>
+
+        <Text style={styles.sectionTitle}>Your books</Text>
+        {booksLoading ? (
+          <View style={styles.booksLoadingRow}>
+            <ActivityIndicator />
+            <Text style={styles.caption}>Loading books…</Text>
+          </View>
+        ) : booksError ? (
+          <Text style={styles.errorText}>{booksError}</Text>
+        ) : books.length === 0 ? (
+          <Text style={styles.caption}>No books yet. Tap Add book to upload a PDF.</Text>
+        ) : (
+          <ScrollView style={styles.bookList} contentContainerStyle={styles.bookListContent}>
+            {books.map((b) => {
+              const failed = b.status === BOOK_STATUS.failed;
+              // Reader is still a placeholder; opening does not spend credits (Epic 127).
+              const canOpen = b.status === BOOK_STATUS.ready;
+              return (
+                <Pressable
+                  key={b.id}
+                  style={[styles.bookRow, failed && styles.bookRowFailed]}
+                  disabled={!canOpen}
+                  onPress={() => {
+                    if (canOpen) router.push(`/reader/${b.id}`);
+                  }}>
+                  <Text style={styles.bookTitle} numberOfLines={2}>
+                    {b.title}
+                  </Text>
+                  <Text style={styles.bookMeta}>
+                    {failed ? 'Failed' : b.status === BOOK_STATUS.uploading ? 'Uploading' : b.status}
+                  </Text>
+                  {failed && b.error_message ? (
+                    <Text style={styles.bookError} numberOfLines={3}>
+                      {b.error_message}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        <Text style={styles.sectionTitle}>Developer</Text>
         <Text style={styles.caption}>Opens the reader with a hardcoded book id to verify dynamic routes.</Text>
 
         <Pressable
@@ -138,10 +222,12 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'stretch',
     padding: 24,
-    gap: 16,
+    gap: 12,
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
   },
   creditsBanner: {
     width: '100%',
@@ -181,16 +267,63 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#c0392b',
   },
-  title: {
-    fontSize: 20,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: '600',
-    textAlign: 'center',
+    marginTop: 8,
   },
   caption: {
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: 'left',
     opacity: 0.8,
-    maxWidth: 320,
+  },
+  addBookButton: {
+    marginTop: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#2f95dc',
+    alignItems: 'center',
+  },
+  addBookButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  booksLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bookList: {
+    maxHeight: 220,
+    width: '100%',
+  },
+  bookListContent: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+  bookRow: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(128,128,128,0.35)',
+    gap: 4,
+  },
+  bookRowFailed: {
+    borderColor: 'rgba(192, 57, 43, 0.45)',
+  },
+  bookTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  bookMeta: {
+    fontSize: 13,
+    opacity: 0.75,
+  },
+  bookError: {
+    fontSize: 13,
+    color: '#c0392b',
   },
   button: {
     marginTop: 8,
