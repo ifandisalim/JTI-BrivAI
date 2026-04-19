@@ -40,6 +40,10 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Notes:** Prefer the **fastest** integrated auth for MVP; Google OAuth can be PA1 if it risks the timeline.
 
+**Detailed spec (Epic 126, JTI-135, JTI-136):** [`docs/specs/mvp/auth-epic-126.md`](auth-epic-126.md)
+
+**Database (profiles):** [`supabase/migrations/20260419140000_auth_profiles.sql`](../../../supabase/migrations/20260419140000_auth_profiles.sql)
+
 ---
 
 ## Epic: Credits
