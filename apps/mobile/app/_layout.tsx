@@ -3,11 +3,11 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
-import { AuthProvider } from '@/src/auth/authSession';
+import { AuthProvider, useAuthSession } from '@/src/auth/authSession';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -32,17 +32,24 @@ export default function RootLayout() {
     if (error) throw error;
   }, [error]);
 
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
   if (!loaded) {
     return null;
   }
 
   return <RootLayoutNav />;
+}
+
+/** Hide native splash only after the first `getSession` resolves (JTI-136 / auth-epic-126 §6.2). */
+function AuthSplashGate({ children }: { children: ReactNode }) {
+  const { initialized } = useAuthSession();
+
+  useEffect(() => {
+    if (initialized) {
+      void SplashScreen.hideAsync();
+    }
+  }, [initialized]);
+
+  return children;
 }
 
 function RootLayoutNav() {
@@ -51,12 +58,14 @@ function RootLayoutNav() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthProvider>
-        <Stack>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(app)" options={{ headerShown: false }} />
-          <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-        </Stack>
+        <AuthSplashGate>
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="(app)" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+          </Stack>
+        </AuthSplashGate>
       </AuthProvider>
     </ThemeProvider>
   );
