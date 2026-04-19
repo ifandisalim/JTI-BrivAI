@@ -54,6 +54,12 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Settings rule:** `STARTER_FREE_PAGES` (name can vary) lives in **one place** alongside `CREDITS_PER_SUMMARIZED_PAGE` (or equivalent). Admin UI is still out of scope; “settings” means **developer-controlled configuration**, not an in-app settings screen—unless you explicitly add one later.
 
+**Detailed spec (Epic 127, JTI-137–JTI-140):** [`docs/specs/mvp/credits-epic-127.md`](credits-epic-127.md)
+
+**App constants:** [`apps/mobile/src/config/credits.ts`](../../../apps/mobile/src/config/credits.ts)
+
+**Database (credits):** [`supabase/migrations/20260419160000_credits.sql`](../../../supabase/migrations/20260419160000_credits.sql)
+
 ---
 
 ## Epic: PDF upload and validation
