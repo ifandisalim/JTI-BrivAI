@@ -30,7 +30,7 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Goal:** A working Android app shell in-repo, Supabase wired for dev/prod-ish configs, and a repeatable way to ship an internal build.
 
-**Detailed spec (Epic 125, JTI-133, JTI-134):** [`docs/specs/mvp/foundation-epic-125.md`](foundation-epic-125.md)
+**Detailed spec (Epic 125, JTI-133, JTI-134):** `[docs/specs/mvp/foundation-epic-125.md](foundation-epic-125.md)`
 
 ---
 
@@ -40,9 +40,9 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Notes:** Prefer the **fastest** integrated auth for MVP; Google OAuth can be PA1 if it risks the timeline.
 
-**Detailed spec (Epic 126, JTI-135, JTI-136):** [`docs/specs/mvp/auth-epic-126.md`](auth-epic-126.md)
+**Detailed spec (Epic 126, JTI-135, JTI-136):** `[docs/specs/mvp/auth-epic-126.md](auth-epic-126.md)`
 
-**Database (profiles):** [`supabase/migrations/20260419140000_auth_profiles.sql`](../../../supabase/migrations/20260419140000_auth_profiles.sql)
+**Database (profiles):** `[supabase/migrations/20260419140000_auth_profiles.sql](../../../supabase/migrations/20260419140000_auth_profiles.sql)`
 
 ---
 
@@ -54,11 +54,11 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Settings rule:** `STARTER_FREE_PAGES` (name can vary) lives in **one place** alongside `CREDITS_PER_SUMMARIZED_PAGE` (or equivalent). Admin UI is still out of scope; “settings” means **developer-controlled configuration**, not an in-app settings screen—unless you explicitly add one later.
 
-**Detailed spec (Epic 127, JTI-137–JTI-140):** [`docs/specs/mvp/credits-epic-127.md`](credits-epic-127.md)
+**Detailed spec (Epic 127, JTI-137–JTI-140):** `[docs/specs/mvp/credits-epic-127.md](credits-epic-127.md)`
 
-**App constants:** [`apps/mobile/src/config/credits.ts`](../../../apps/mobile/src/config/credits.ts)
+**App constants:** `[apps/mobile/src/config/credits.ts](../../../apps/mobile/src/config/credits.ts)`
 
-**Database (credits):** [`supabase/migrations/20260419160000_credits.sql`](../../../supabase/migrations/20260419160000_credits.sql)
+**Database (credits):** `[supabase/migrations/20260419160000_credits.sql](../../../supabase/migrations/20260419160000_credits.sql)`
 
 ---
 
