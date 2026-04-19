@@ -27,6 +27,23 @@ When we discuss **features**, or when work will become **written specs** or **tr
 - Prefer **one focused round of questions** at a time so it is easy to answer, unless the topic is obviously huge.
 - Before proposing tickets: confirm **who it is for**, **definition of done**, **out of scope**, and **edge cases** that would block engineering or QA.
 
+## MVP written specs (`docs/specs/`)
+
+When **creating a new spec file** or **substantially rewriting** an MVP spec under `docs/specs/`:
+
+1. **User perspective before the long draft**  
+   Ask a **focused round of clarifying questions** about the **feature from my point of view** (what I see, tap, and feel; happy path; errors; where I land after success)—**before** writing a full implementation-style spec. Use **A / B / C options plus your recommendation** when that makes answers fast.  
+   **Skip** this round only if I explicitly say to skip (e.g. “no questions, assume X”).
+
+2. **Design references are mandatory in the spec**  
+   Include a **Design references** subsection that ties the work to:  
+   - **`resources/BrivAI designs/`** — name the **exact PNG files** when known; if unknown, list the candidate frames and say we will confirm.  
+   - **`resources/BrivAI Features/`** — link any PDFs that inform the flow or copy, when relevant.  
+   Follow **`docs/specs/mvp/README.md`** → subsection **UI design fidelity (`resources/`)** for priority when a PDF disagrees with frozen MVP decisions.
+
+3. **Repo hygiene**  
+   For a new epic doc: add a link from **`docs/specs/mvp/README.md`** and keep **Linear** (or other trackers) pointing at stable spec anchors.
+
 ## When we talk about this app (product and usage)
 
 Assume I have **no interest in implementation detail** unless I explicitly ask for it.
