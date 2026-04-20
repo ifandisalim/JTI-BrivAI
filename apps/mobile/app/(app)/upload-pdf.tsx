@@ -145,7 +145,8 @@ export default function UploadPdfScreen() {
     if (insertError) {
       setPhase('idle');
       setMessage('Could not start upload.');
-      setDetail(insertError.message);
+      setDetail('Check that you are signed in, then try again. If this keeps happening, sign out and sign back in.');
+      if (__DEV__) console.warn('[upload-pdf] books insert', insertError.message);
       return;
     }
 
@@ -236,14 +237,20 @@ export default function UploadPdfScreen() {
 
     const payload = parsePayload();
     if (!payload?.success) {
-      await removeStorageSilently(storagePath);
       const userMsg =
         typeof payload?.error_message === 'string' && payload.error_message.trim().length > 0
           ? payload.error_message.trim()
           : 'This PDF did not pass our checks. Choose another PDF and try again.';
+      const errCode =
+        typeof payload?.error_code === 'string' && payload.error_code.trim().length > 0
+          ? payload.error_code.trim()
+          : 'failed_validation';
+      await failBookRow(bookId, BOOK_STATUS.failed, userMsg, errCode);
       setPhase('idle');
       setMessage(userMsg);
-      setDetail('You can pick a different PDF from the Add book screen, or go back to the library to see this import as failed.');
+      setDetail(
+        'Go back to the library to see this import as failed, or pick a different PDF from Add book.',
+      );
       return;
     }
 
