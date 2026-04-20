@@ -37,7 +37,15 @@ Deno.test('summarizePageText rejects oversized page text', async () => {
 Deno.test('summarizePageText returns trimmed summary on success', async () => {
   const stubFetch: typeof fetch = async (input, init) => {
     assertEquals(input, 'https://api.openai.com/v1/chat/completions');
-    const body = JSON.parse(String(init?.body)) as {
+    const initReq = init as RequestInit | undefined;
+    const rb = initReq?.body;
+    const rawBody =
+      typeof rb === 'string'
+        ? rb
+        : rb instanceof Uint8Array
+          ? new TextDecoder().decode(rb)
+          : '';
+    const body = JSON.parse(rawBody) as {
       messages: Array<{ role: string; content: string }>;
     };
     assertEquals(body.messages[0].role, 'system');
