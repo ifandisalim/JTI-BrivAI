@@ -8,18 +8,20 @@
 - Issue: **[JTI-146](https://linear.app/jtienterprise/issue/JTI-146/mvp-sum-03-prioritize-pages-1-10-then-background-fill-remaining-pages)** — Prioritize pages 1–10, then background-fill  
 - Issue: **[JTI-147](https://linear.app/jtienterprise/issue/JTI-147/mvp-sum-04-persist-per-page-summaries-keyed-by-bookid-pageindex)** — Persist per-page summaries `(bookId, pageIndex)`  
 - Issue: **[JTI-148](https://linear.app/jtienterprise/issue/JTI-148/mvp-sum-05-reader-prefetch-api-contract-fetch-page-summary-next-pages)** — Reader prefetch / fetch API contract  
-- Issue: **[JTI-149](https://linear.app/jtienterprise/issue/JTI-149/mvp-sum-06-per-page-failure-retry-and-non-poisoning-errors)** — Per-page failure, retry, non-poisoning errors
+- Issue: **[JTI-149](https://linear.app/jtienterprise/issue/JTI-149/mvp-sum-06-per-page-failure-retry-and-non-poisoning-errors)** — Per-page failure, retry, non-poisoning errors  
+- Issue: **[JTI-157](https://linear.app/jtienterprise/issue/JTI-157/mvp-sum-07-content-start-detection-hybrid-bookscontent-start-page)** — Content start detection (hybrid) + `books.content_start_page_index`  
+- Issue: **[JTI-158](https://linear.app/jtienterprise/issue/JTI-158/mvp-sum-08-priority-window-ss9-tail-fill-libraryreader-default-toast)** — Priority window **S…S+9**, tail fill + library/reader default + toast
 
 **Purpose**
 
-This document is the **implementation-grade** spec for **Mode A**: one summary unit per **original PDF page** (1…N). The pipeline **extracts text** per page (text-PDF happy path), **summarizes on the server**, **prioritizes pages 1–10**, **fills the rest in the background**, **persists** results per `(book_id, page_index)`, **charges credits** only for successful summarization (see Epic 127), and handles **failures and retries** without corrupting good pages.
+This document is the **implementation-grade** spec for **Mode A**: one summary unit per **original PDF page** (1…N). The pipeline **extracts text** per page (text-PDF happy path), **summarizes on the server**, **detects body start** **`S`** per book (see §15–16) and **prioritizes the first batch** **S…min(S+9, N)** (replaces “physical pages 1–10” as the priority window), **fills the rest in the background** (pages **before `S`** and **after `S+9`**), **persists** results per `(book_id, page_index)`, **charges credits** only for successful summarization (see Epic 127), and handles **failures and retries** without corrupting good pages.
 
 **Dependencies**
 
 - **Epic 128:** `books` row + PDF in **private** Storage, validation passed (`ready` or equivalent).  
 - **Epic 127:** `consume_credit` RPC + idempotency + ledger (per-page charge on success only).  
 - **Epic 126:** RLS scoped to `auth.uid()`.  
-- **Frozen MVP:** `docs/specs/mvp/README.md` (first 10 pages first, max 300 pages, text PDF happy path, scanned handled clearly at failure).
+- **Frozen MVP:** `docs/specs/mvp/README.md` (first **readable batch** anchored at body start **S…S+9**, max 300 pages, text PDF happy path, scanned handled clearly at failure).
 
 ---
 
@@ -29,7 +31,8 @@ This document is the **implementation-grade** spec for **Mode A**: one summary u
 | Rule                                                                        | Source              |
 | --------------------------------------------------------------------------- | ------------------- |
 | One summary unit per **PDF page index** 1…N                                 | Mode A              |
-| **Prioritize** summarization for **pages 1–10** before tail pages           | MVP README          |
+| **Prioritize** summarization for **`S`…`min(S+9, N)`** (body-anchored “first 10”) before other indices | §15–16 + MVP README |
+| **Body start `S`:** stored on **`books.content_start_page_index`**, **1…N** | §15 (JTI-157)       |
 | **Credits:** charge **per successfully summarized page** only               | Epic 127 + README   |
 | **Scanned / no extractable text:** fail **clearly**; do not pretend success | README + §1.5 row 6 |
 
@@ -43,7 +46,7 @@ These choices are **normative for UX copy and flows** for summarization and for 
 
 | #   | Topic                                 | Decision                                                                                                                                                                                                                                                                              |
 | --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **While summarizing (first batch)**   | **Short full-screen (or full-bleed) “getting summaries ready”** experience while the **first priority batch (pages 1–10)** is being prepared; after that, work continues **in the background** without blocking the whole app on a single modal for the entire book.                  |
+| 1   | **While summarizing (first batch)**   | **Short full-screen (or full-bleed) “getting summaries ready”** experience while the **first priority batch (`S`…`min(S+9, N)`)** is being prepared; after that, work continues **in the background** without blocking the whole app on a single modal for the entire book.                  |
 | 2   | **Reader before all pages are ready** | User can **read any page that already has a successful summary**; pages **not ready yet** show a **calm, plain-English “still preparing this page”** state (not a scary error, not a blank hole).                                                                                     |
 | 3   | **One bad page**                      | **Automatic retries** happen first (server-side, bounded). If retries are exhausted, that page shows a **clear error** and a **“Try again”** (or equivalent) for **that page only**; other pages stay usable.                                                                         |
 | 4   | **Out of credits mid-book**           | **Stop scheduling new pages** once credits are insufficient; user can still read **pages already summarized**. Messaging matches existing **out of credits** patterns from the library/credits work (no purchases in MVP).                                                            |
@@ -95,8 +98,8 @@ These choices are **normative for UX copy and flows** for summarization and for 
 
 ## 3. High-level pipeline (target end state)
 
-1. A **worker** (or Edge pipeline) notices a `book` in **ready-for-summarization** state (exact column name from Epic 128).
-2. For each page index in order, **schedule** pages **1–10** before lower-priority tail pages (JTI-146).
+1. A **worker** (or Edge pipeline) notices a `book` in **ready-for-summarization** state (exact column name from Epic 128) **and** **`books.content_start_page_index`** is already set (JTI-157 / §15.3 — **do not enqueue** summarization until **`S`** exists).
+2. For each page index in order, **schedule** the **priority window** **`S`…`min(S+9, N)`** before other indices; then background-fill **1…S−1** and **S+10…N** (JTI-146 + JTI-158).
 3. **Extract** text for page *n* (JTI-144); if unusable, mark page failed with user-safe messaging (§1.5 row 6).
 4. **Summarize** server-side using `config/summaryPrompt.ts` (JTI-145).
 5. On **successful** summary, **persist** row keyed by `(book_id, page_index)` (JTI-147) and **charge** exactly **one** logical page credit via `consume_credit` with a **stable idempotency key** for that page (e.g. `summary_charge:{book_id}:{page_index}` — exact format documented in code).
@@ -144,7 +147,7 @@ Implementers choose table names, but the **concepts** are required:
 
 Epic 129 is complete when **all** of the following are true:
 
-1. For a representative **text PDF** within MVP limits, **pages 1–10** become **readable summaries** before the tail pages in typical runs (JTI-146).
+1. For a representative **text PDF** within MVP limits, the **priority window** **`S`…`min(S+9, N)`** becomes **readable summaries** before the remaining pages in typical runs (JTI-146 / JTI-157 / JTI-158).
 2. Each summarized page is **persisted** at `(book_id, page_index)` and survives app restart (JTI-147).
 3. **Credits** match Epic 127 rules: **no double charge** on retry; **no charge** on hopeless failure paths defined in JTI-149.
 4. **Scanned / empty text** fails with a **clear, plain-English** outcome (§1.5 row 6).
@@ -188,15 +191,17 @@ Given extracted text for page *n*, produce **summary text** matching §1.5 row 5
 
 
 
-## 9. JTI-146 — Prioritize pages 1–10, then background
+## 9. JTI-146 — Prioritize body batch (`S`…`min(S+9, N)`), then background
 
 ### 9.1 Goal
 
-User can start reading **soon**; tail pages fill while they read forward.
+User can start reading **near the main text** soon; remaining pages (front matter and far tail) fill in the background.
 
 ### 9.2 Definition of done (testable)
 
-- Scheduler **prefers** 1–10 before starting **higher** indices except when dependencies require strict order (N/A for independent pages—document).  
+- **`S`** comes from `books.content_start_page_index` (§15–16).  
+- Scheduler **prefers** indices **`S`…`min(S+9, N)`** before any other page index for that book **unless** `N < S` (invalid — should not happen if `S` is validated against `page_count`).  
+- After the priority window is scheduled (or running), the worker **background-fills** **1…`S−1`** and **`min(S+10, N)`…`N`** — order between those two regions is **implementation-defined**; prefer finishing **`S+10…N`** before **`1…S−1`** when workloads tie (keeps forward reading smoother).  
 - Background work **does not** freeze the UI thread on the device (all heavy work server-side or off main thread on client if any local step exists).
 
 ---
@@ -303,21 +308,105 @@ One bad page **does not ruin** the whole book; automatic retries are bounded; us
 
 ---
 
-## 13. Out of scope (explicit)
+<a id="jti-157"></a>
 
-- **Multiple summary types** / user-selectable length modes (see `**4) Adjustable Summary Type.pdf`** — post-MVP).  
-- **Trust / AI** extra copy during summarization (§1.5 row 7).  
-- **Full reader UI polish** (Epic 130) — this epic still defines **data + status** the reader will consume.
+## 15. JTI-157 - Content start detection (hybrid) and `books` columns
+
+### 15.1 Goal
+
+For each **validated** book, choose a **1-based body start page** **`S`** so summarization and the app **skip** typical front matter (cover, copyright, TOC where possible) and **open reading** near **Chapter 1–style** content when detection succeeds.
+
+### 15.2 Database (normative)
+
+Migration: `supabase/migrations/20260421100000_books_content_start_jti157.sql` (or successor).
+
+| Column | Type | Meaning |
+| ------ | ---- | ------- |
+| `content_start_page_index` | `integer not null` (default `1`) | **`S`**, **1…`page_count`**. Clamp against `books.page_count` when known. |
+| `content_start_method` | `text not null` (default `fallback_default`) | `heuristic` \| `llm` \| `fallback_default` — how **`S`** was chosen. |
+
+**Writes:** only **trusted server paths** (Edge Function / service role / SECURITY DEFINER with fixed `search_path`). The mobile client **must not** set these fields in normal builds; if `books` RLS allows user `update`, treat **client tampering** as out of scope for MVP beyond “honest client” assumptions.
+
+### 15.3 Timing (**7A** — blocking before summarization)
+
+After **`validate-book-pdf`** (or equivalent) has set `page_count` and **`books.status = ready`**, run **content-start detection** in the **same** post-validation pipeline (or immediately chained job) so that **`S`** and **`content_start_method`** are **always populated** **before** any summarization worker **enqueues** page jobs for that `book_id`.
+
+**Do not** enqueue summarization for a book whose **`content_start_page_index`** has not yet been committed (staging envs may temporarily relax this — document).
+
+### 15.4 Hybrid algorithm (**1C** — normative outline)
+
+1. **Heuristics (fast path):** scan extracted text for the **first `K` pages** (`K` documented in code, e.g. **min(25, page_count)**). Use language-agnostic patterns where possible: e.g. lines matching **chapter** stems (`Chapter`, `CHAPTER`, `Ch.`), roman/arabic numbering, common **Contents** / **Acknowledgements** section headers — **scoring** pages; pick the **lowest** page index above a **confidence threshold** as candidate **`S`** with **`content_start_method = heuristic`**.
+
+2. **LLM path (fallback from low confidence):** If heuristics are **inconclusive** below threshold, call the **LLM once per book** with a **small structured prompt** (page numbers + short text excerpts per page, capped by token budget) asking for **`S`** only (integer **1…N**), returning **`content_start_method = llm`** when accepted.
+
+3. **Final fallback (**2B**): If still unconstrained or model invalid, set **`S = 1`**, **`content_start_method = fallback_default`**. Downstream **library/reader** show the **calm** line: readers understand we **could not** find a chapter start and **opened at page 1** (copy in §16.3).
+
+**Note:** Exact regex lists and thresholds live in **one server module** (name in PR) so tuning does not scatter.
+
+### 15.5 Definition of done — JTI-157 (testable)
+
+- New columns present; existing books **backfilled** with **`S = 1`**, **`fallback_default`**.  
+- Golden **fixtures** (2–3 PDFs) in CI or manual script: at least one **heuristic** hit, one **LLM** path, one **fallback_default**.  
+- Summarization **does not start** until **`S`** is written for **new** uploads in real runs.
 
 ---
 
-## 14. Suggested implementation order
+<a id="jti-158"></a>
 
-1. **JTI-147** — schema + RLS + empty `pending` rows optional (or create row on first touch—document).
-2. **JTI-144** — extraction proof on one page.
-3. **JTI-145** + `**config/summaryPrompt.ts`** — one page end-to-end + credit charge.
-4. **JTI-146** — scheduler priority.
-5. **JTI-148** — read/prefetch contract for app.
-6. **JTI-149** — harden failures and retries.
+## 16. JTI-158 - Priority window, library/reader default, toast
 
-Order may flex with **vertical slices** (e.g. 144→145→147 before 146) as long as acceptance criteria hold.
+### 16.1 Scheduler (**3A**)
+
+Implement **§9** with **`S`** from JTI-157. The **first credit-bearing batch** for UX (“getting summaries ready”) aligns with **`S`…`min(S+9, N)`**, not physical **1–10**.
+
+### 16.2 Library default open (**5A** — with Epic 131)
+
+When the user opens a **ready** book **and** Epic **131** has **no** AsyncStorage last-read for that `(userId, bookId)`:
+
+- Set **`initialPageIndex = books.content_start_page_index`** (i.e. **`S`**) from the same `select` that powers the library row (or a follow-up fetch — document one approach).  
+- If local last-read **exists**, it **always wins** over **`S`** (unchanged product rule).
+
+Details: `docs/specs/mvp/library-epic-131.md` §4.2 (update alongside this spec).
+
+### 16.3 Toast and fallback copy (**4B** + **2B**)
+
+| Condition | UX (once per book per device unless noted) |
+| --------- | --------------------------------------------- |
+| `content_start_method` is **`heuristic`** or **`llm`** | **One-time** non-blocking message after open, e.g. **“Opened near where the main text begins (page S). You can use Previous to go back.”** Track **`AsyncStorage` key** `brivai:smartStartToast:v1:<userId>:<bookId>` so it does not repeat. |
+| `content_start_method` is **`fallback_default`** | **One-time** calm line per **§15.4** point 3, e.g. **“We couldn’t detect a chapter start for this PDF; opened at page 1.”** Separate key pattern acceptable. |
+
+Implementation may live in **reader shell** or **library** before navigation — pick one place and document.
+
+### 16.4 Reader prefetch (Epic 130)
+
+After open, **mandatory prefetch** (`reader-epic-130.md` §4) uses **`p`** as the **settled** page — typically **`S`** on first open — so prefetch windows stay consistent.
+
+### 16.5 Definition of done — JTI-158 (testable)
+
+- End-to-end: new upload → **`S`** set → summarization prioritizes **`S`…`min(S+9, N)`** in observed traces.  
+- Library open **without** last-read lands on **`S`**.  
+- Toast / fallback messages appear per table; keys prevent spam.  
+- Manual QA notes for **small books** (`N` less than 10 pages) so the priority window is shorter than 10 indices.
+
+---
+
+## 17. Out of scope (explicit)
+
+- **Multiple summary types** / user-selectable length modes (see `**4) Adjustable Summary Type.pdf`** — post-MVP).  
+- **Trust / AI** extra copy during summarization (§1.5 row 7).  
+- **Full reader UI polish** (Epic 130) — this epic still defines **data + status** the reader will consume.  
+- **Perfect** chapter detection on all layouts; MVP aims for **good enough** plus **safe** fallback.
+
+---
+
+## 18. Suggested implementation order
+
+1. **JTI-157** — migration + hybrid detection hooked to **post-validation** pipeline (**before** enqueue).  
+2. **JTI-147** — schema + RLS + empty `pending` rows optional (or create row on first touch—document).  
+3. **JTI-144** — extraction proof on one page.  
+4. **JTI-145** + `**config/summaryPrompt.ts`** — one page end-to-end + credit charge.  
+5. **JTI-146** / **JTI-158** — scheduler priority (`**S`…`min(S+9, N)`** tails).  
+6. **JTI-148** — read/prefetch contract for app.  
+7. **JTI-149** — harden failures and retries.
+
+Order may flex with **vertical slices** (e.g. 144→145→147 before **scheduler**) as long as acceptance criteria hold. **Do not** enqueue summarization before **JTI-157** is satisfied for new books.

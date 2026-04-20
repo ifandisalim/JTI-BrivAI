@@ -11,7 +11,7 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 - **Reading mode:** **Mode A** only — **one summary unit per PDF page** (1…N). Mode B / chapter editions are post-MVP.
 - **Auth:** **Fastest path** for MVP (default assumption: **Supabase magic link email** unless we explicitly change after a spike).
 - **Limits:** max **50 MB** file size; max **300** PDF pages.
-- **First-load summarization:** prioritize **first 10** PDF pages, then background fill.
+- **First-load summarization:** after **body start `S`** is detected on the book, prioritize **`S`…`S+9`** (capped at **N**), then background fill (see `docs/specs/mvp/summarization-epic-129.md` §15–16).
 - **Credits:** **free credits only** in MVP; **no purchases**; show a clear **out of credits** state.
 - **Starter credits (default):** **50 pages** worth of summarization (meaning: enough credits to summarize **50 PDF pages** at the configured **per-page credit cost**). This must be driven by a **single documented setting** (for example one env var, one config module constant, or one Supabase settings row—pick one approach and do not scatter magic numbers).
 - **Library:** **full history** of uploaded books (not “last book only”).

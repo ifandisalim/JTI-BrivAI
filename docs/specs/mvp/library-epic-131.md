@@ -56,7 +56,7 @@ These match the agreed **A/B/C** selection for Epic 131.
 ### 3.1 Data source (normative)
 
 - Query **`public.books`** for the current user (RLS already restricts rows).  
-- `select` at minimum: `id, title, status, error_message, created_at` (plus any columns needed for subtitle later).  
+- `select` at minimum: `id, title, status, error_message, created_at, page_count, content_start_page_index, content_start_method` (for **§4.2** / **129**).  
 - **Order:** `order('title', { ascending: true })`, then `order('created_at', { ascending: false })` if the client cannot express multi-key sort in one call, implement **in-memory** stable sort: primary `title.toLocaleLowerCase()` (or `localeCompare`), secondary `created_at` descending.
 
 ### 3.2 Pull-to-refresh (normative)
@@ -94,9 +94,12 @@ These match the agreed **A/B/C** selection for Epic 131.
 When the user opens a book from the library:
 
 1. Resolve **`userId`** from Supabase session (`session.user.id`).  
-2. **Read** AsyncStorage for the key; if missing or parse error, **`initialPageIndex = 1`**.  
-3. If **`pageIndex` &gt; `page_count`** for that book once known, **clamp** to `page_count` (or **1** if `page_count` is null on first open — reconcile on library row data if available).  
-4. Navigate to reader with **`initialPageIndex`** as in §5.
+2. **Read** AsyncStorage for the key.  
+3. **If** a valid **`pageIndex`** exists in AsyncStorage, use that as **`initialPageIndex`** (last-read **always wins** — ties to Epic **130** / **129** product choice **5A**).  
+4. **Else** (no local last-read): load **`books.content_start_page_index`** (**`S`**) from the same book row used for the tap (extend `select` to include **`content_start_page_index`** and optionally **`content_start_method`** for UX). Use **`initialPageIndex = max(1, min(S, page_count ?? S))`**.  
+5. **Else** if **`S`** is unavailable (error), **`initialPageIndex = 1`**.  
+6. If **`pageIndex` &gt; `page_count`** once known, **clamp** to `page_count`.  
+7. Navigate to reader with **`initialPageIndex`** as in §5; pass through **`content_start_method`** (or equivalent) if the reader needs it for **one-time** copy per `summarization-epic-129.md` §16.3.
 
 ### 4.3 Write path (normative)
 
@@ -116,7 +119,7 @@ Implement a small module, e.g. `apps/mobile/src/lib/readingProgress.ts`, used by
 
 - Force-kill and reopen app: last-read position for a book is still restored when opening from library (same device).  
 - Rapid swiping then immediate back: stored page matches **last settled** page (flush on unmount).  
-- New book / missing key opens at **page 1**.  
+- New book / missing **local** key opens at **`S`** when **`content_start_page_index`** is present on **`books`**, otherwise **page 1** (see `summarization-epic-129.md` §16.2).  
 - Uninstall app / new device: progress **not** expected to survive (1C).
 
 ---
@@ -190,16 +193,6 @@ GitHub URL base (on `main`):
 
 ---
 
-## 11. “Skip front matter / jump to Chapter 1” (product placement, not Epic 131)
+## 11. Body start **`S`** (Epic 129, not Epic 131)
 
-**Not part of Epic 131.** This epic is **list + local resume**, not **detecting where the real chapters start** in a PDF.
-
-**Where it belongs conceptually**
-
-| Option | Epic / area | Fits when… |
-| ------ | ------------- | ---------- |
-| **A — Summarization (129)** | **[JTI-129](https://linear.app/jtienterprise/issue/JTI-129/epic-summarization-pipeline-mode-a)** | You compute or store a **`content_start_page_index`** (heuristic, TOC extraction, or first “dense text” page), change **prioritization** (e.g. first summaries after front matter), and persist on **`books`** or **`page_summaries`**. Mode A stays **one block per PDF page**; you only change **which pages matter first** and **what default open page** is. |
-| **B — New epic** | e.g. **“Reading start / front matter”** | The feature is large: **LLM structure**, **manual user override**, **settings UI**. Use when it **does not** fit in a single summarization issue. |
-| **C — Reader (130)** | Surface only | Reader shows **“Start at page X”** if **some other layer** already stored **`X`** — reader **does not** infer chapters by itself. |
-
-**Recommendation:** start under **Summarization (129)** as **one or two new Linear issues** (detection or manual **“start reading here”**, migration on `books`, then **131/130** read that default as **`initialPageIndex`** when no local last-read exists — **optional** follow-up once 1C is superseded or alongside AsyncStorage **default override**). Treat as **scope expansion** to the **~2-week MVP** timeline; ship **131/130** first, then add “smart start” if capacity allows.
+**Detection** of **`S`** and **summarization priority** are specified in **`summarization-epic-129.md` §15–16** ([JTI-157](https://linear.app/jtienterprise/issue/JTI-157/mvp-sum-07-content-start-detection-hybrid-bookscontent-start-page) / [JTI-158](https://linear.app/jtienterprise/issue/JTI-158/mvp-sum-08-priority-window-ss9-tail-fill-libraryreader-default-toast)). **Epic 131** only **reads** `books.content_start_page_index` when resolving **`initialPageIndex`** if there is **no** local last-read (§4.2).

@@ -62,7 +62,8 @@ These choices come from the agreed **A/B/C** selection for Epic 130 and must not
 | Param              | Type          | Required | Notes                                                                                                                                                                                                                                         |
 | ------------------ | ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bookId`           | `uuid` string | yes      | Must belong to `auth.uid()` via existing RLS on `books`.                                                                                                                                                                                      |
-| `initialPageIndex` | integer       | no       | **1-based** PDF page index. If omitted, default `**1`**. If provided out of range once `page_count` is known, **clamp** to `1..page_count` and optionally show a one-line toast (“Opened at page …”)—implementation choice, but **no crash**. |
+| `initialPageIndex` | integer       | no       | **1-based** PDF page index. If omitted, default **`1`**. If provided out of range once `page_count` is known, **clamp** to `1..page_count` and optionally show a one-line toast (“Opened at page …”)—implementation choice, but **no crash**. |
+| `contentStartMethod` | string      | no       | Pass-through from library (`heuristic` \| `llm` \| `fallback_default`) when known, for **one-time** body-start copy (`summarization-epic-129.md` §16.3). Omit if unavailable. |
 
 
 ### 3.2 Stack contract
@@ -105,7 +106,7 @@ Let `p` be the **settled** current page index (1-based, in range). Let `N` be `p
 
 ## 5. Cross-epic contract - last-read page (JTI-131 / JTI-154)
 
-Epic 131 owns **where** last-read is stored and how it syncs (see **`docs/specs/mvp/library-epic-131.md`** — **device-local AsyncStorage** for MVP, batch-safe flushes). Epic 130 owns **when** the reader reports a new “settled” page.
+Epic 131 owns **where** last-read is stored and how it syncs (see **`docs/specs/mvp/library-epic-131.md`** — **device-local AsyncStorage** for MVP, batch-safe flushes). Epic **129** owns **`content_start_page_index` (**`S`**)** on **`books`**. Epic 130 owns **when** the reader reports a new “settled” page and **surfaces** smart-start toasts per §16.3 of **`summarization-epic-129.md`** when **`contentStartMethod`** is supplied.
 
 **Normative events (call into the library/reading-progress module Epic 131 will implement):**
 
