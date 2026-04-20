@@ -177,7 +177,15 @@ export default function LibraryScreen() {
                     {b.title}
                   </Text>
                   <Text style={styles.bookMeta}>
-                    {failed ? 'Failed' : b.status === BOOK_STATUS.uploading ? 'Uploading' : b.status}
+                    {failed
+                      ? 'Failed'
+                      : b.status === BOOK_STATUS.uploading
+                        ? 'Uploading'
+                        : b.status === BOOK_STATUS.validating
+                          ? 'Checking PDF'
+                          : b.status === BOOK_STATUS.ready
+                            ? 'Ready'
+                            : b.status}
                   </Text>
                   {failed && b.error_message ? (
                     <Text style={styles.bookError} numberOfLines={3}>
