@@ -1,7 +1,8 @@
 /**
- * JTI-142: Server-authoritative PDF validation after Storage upload.
+ * JTI-142 / JTI-143: Server-authoritative PDF validation after Storage upload.
  * Downloads the object with the service role, checks magic bytes + size, parses page count (pdf-lib),
- * then sets `books.status` to `ready` or `failed` with stable `error_code` + user-safe `error_message`.
+ * then drives `books.status`: `uploading` | `validating` → `ready` or `failed` (see `pdf-upload-epic-128.md` §9.2).
+ * Summarization may be triggered from DB/webhooks later (§9.3); this function only finalizes validation.
  */
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1';
@@ -77,13 +78,37 @@ Deno.serve(async (req) => {
 
   const { data: book, error: bookErr } = await admin
     .from('books')
-    .select('id,user_id,storage_bucket,storage_path,status')
+    .select('id,user_id,storage_bucket,storage_path,status,page_count,byte_size,error_code,error_message')
     .eq('id', bookId)
     .eq('user_id', userId)
     .maybeSingle();
 
   if (bookErr || !book) {
     return jsonResponse({ error: 'book_not_found' }, 404);
+  }
+
+  if (book.status === 'ready') {
+    return jsonResponse({
+      success: true,
+      page_count: book.page_count,
+      byte_size: book.byte_size,
+    });
+  }
+
+  if (book.status === 'failed') {
+    return jsonResponse({
+      success: false,
+      error_code: typeof book.error_code === 'string' && book.error_code.length > 0
+        ? book.error_code
+        : 'failed',
+      error_message: typeof book.error_message === 'string' && book.error_message.length > 0
+        ? book.error_message
+        : 'This import did not finish. Pick the PDF again from the library.',
+    });
+  }
+
+  if (book.status !== 'uploading' && book.status !== 'validating') {
+    return jsonResponse({ error: 'invalid_book_state' }, 409);
   }
 
   await admin

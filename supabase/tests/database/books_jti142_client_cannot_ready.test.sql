@@ -1,4 +1,4 @@
--- JTI-142: Authenticated users cannot bypass server validation by setting `books.status` to `ready` or `validating`.
+-- JTI-142 / JTI-143: Authenticated users cannot bypass server validation by setting `books.status` to `ready` or `validating`.
 -- Run: npx supabase test db (requires Docker; migrations applied before tests).
 
 begin;
@@ -6,7 +6,7 @@ begin;
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists pgtap with schema extensions;
 
-select plan(1);
+select plan(2);
 
 insert into auth.users (
   id,
@@ -90,6 +90,17 @@ select throws_ok(
   '42501',
   null,
   'JTI-142/DoD: client RLS blocks marking book ready without server'
+);
+
+select throws_ok(
+  $$
+    update public.books
+    set status = 'validating', error_code = null, error_message = null
+    where id = 'eeeeeeee-bbbb-4eee-addd-eeeeeeeeeeee'::uuid;
+  $$,
+  '42501',
+  null,
+  'JTI-143/DoD: client RLS blocks skipping server by setting validating'
 );
 
 select * from finish();
