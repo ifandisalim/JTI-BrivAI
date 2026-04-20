@@ -128,13 +128,18 @@ export async function summarizePageText(args: {
         http_status: 503,
       };
     }
+    if (res.status >= 400 && res.status < 500) {
+      return {
+        ok: false,
+        error_code: 'provider_bad_request',
+        error_message: 'We could not summarise this page from the text we received. Try again or pick another PDF export.',
+        http_status: 400,
+      };
+    }
     return {
       ok: false,
       error_code: 'provider_error',
-      error_message:
-        res.status >= 500
-          ? 'The summary service is temporarily unavailable. Try again in a moment.'
-          : 'We could not summarise this page. Try again in a moment.',
+      error_message: 'The summary service is temporarily unavailable. Try again in a moment.',
       http_status: 502,
     };
   }
