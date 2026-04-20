@@ -229,6 +229,56 @@ Client can load **current + nearby** pages efficiently (batched or single-select
 - Documented contract: inputs (`book_id`, `page_indices[]` or range), outputs (`status`, `summary_text` nullable, `error_*` when failed).  
 - **Max batch size** documented to protect payload sizes on mobile.
 
+### 11.3 Implemented API (Supabase RPC)
+
+**Name:** `public.fetch_page_summaries_for_reader(p_book_id uuid, p_page_indices integer[])`
+
+**Auth:** `authenticated`; returns `not_authenticated` if `auth.uid()` is null.
+
+**Max batch size:** **32** distinct page indices per call (MVP guard for mobile payloads; books may have up to **300** pages per frozen MVP README — prefetch in multiple calls when needed).
+
+**Input**
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `p_book_id` | `uuid` | Required; must be a book owned by the caller. |
+| `p_page_indices` | `integer[]` | Non-empty; **no duplicates**; each index is **1-based** PDF page; **no null** elements. |
+
+**Success response** (`ok: true`)
+
+| Field | Meaning |
+| --- | --- |
+| `book_id` | Echo of input. |
+| `page_count` | From `books.page_count` (may be `null` if unknown). |
+| `pages` | Array of objects, **same order as `p_page_indices`**. |
+| `next_page_hints` | Up to **3** objects for in-range pages **after** the highest valid requested index (helps prefetch “next pages” without re-specifying indices). Empty `[]` if there is no valid in-range successor (e.g. only invalid indices requested, or book ends). |
+| `max_batch_size` | Always **32**. |
+
+**Each page object** (in `pages` and `next_page_hints`)
+
+| Field | Meaning |
+| --- | --- |
+| `page_index` | 1-based page number. |
+| `status` | `pending` \| `processing` \| `ready` \| `failed` when a row exists or the index is in range and valid; **`invalid_page_index`** when `page_index < 1` or `page_index > page_count` (when `page_count` is set). |
+| `summary_text` | Present when `ready`; otherwise `null`. |
+| `error_code` / `error_message` | From `page_summaries` when `failed`; for `invalid_page_index`, `error_code` is `invalid_page_index` and `error_message` is plain English. |
+| `updated_at` | From row when present; `null` for synthetic pending/invalid entries. |
+
+**Error responses** (`ok: false`)
+
+| `error` | When |
+| --- | --- |
+| `book_id_required` | `p_book_id` is null. |
+| `page_indices_required` | Empty array. |
+| `batch_too_large` | More than 32 indices. Response includes `max_batch_size` and `requested_count`. |
+| `duplicate_page_indices` | Same page appears twice in the array. |
+| `null_page_index` | Array contains a null. |
+| `book_not_found` | No such book id. |
+| `forbidden` | Book belongs to another user. |
+| `not_authenticated` | No JWT user. |
+
+**Client usage (TypeScript):** `apps/mobile/src/lib/pageSummariesReader.ts` exports `READER_PREFETCH_MAX_BATCH` and `fetchPageSummariesForReader(supabase, bookId, pageIndices)` wrapping this RPC.
+
 ---
 
 
