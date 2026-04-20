@@ -106,7 +106,9 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 ## Epic: Library resume and history
 
-**Goal:** Full library list of books and **resume last-read page** per book for the signed-in user.
+**Goal:** Full library list of books and **resume last-read page** per book for the signed-in user (MVP: **device-local** progress per `library-epic-131.md`).
+
+**Detailed spec (Epic 131, JTI-153–JTI-154):** `[docs/specs/mvp/library-epic-131.md](library-epic-131.md)` — anchors **`#jti-131`**, **`#jti-153`**, **`#jti-154`**.
 
 ---
 

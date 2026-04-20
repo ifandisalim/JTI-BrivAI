@@ -43,7 +43,7 @@ These choices come from the agreed **A/B/C** selection for Epic 130 and must not
 | #   | Topic                      | Decision                                                                                                                                                                                                                                                                                                                                                   |
 | --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **Library boundary (1B)**  | Reader spec defines **when** “settled page” is reported for **last-read** persistence; **database writes and RLS** for last-read live under **Epic 131** ([JTI-131](https://linear.app/jtienterprise/issue/JTI-131/epic-library-resume-and-history), [JTI-154](https://linear.app/jtienterprise/issue/JTI-154/mvp-lib-02-resume-last-read-page-per-book)). |
-| 2   | **Session entry (2A)**     | Reader is opened **only** via in-app navigation with **`bookId`** (UUID string) and optional **`initialPageIndex`** (1-based integer). No URL scheme / push entry in MVP.                                                                                                                                                                                    |
+| 2   | **Session entry (2A)**     | Reader is opened **only** via in-app navigation with `**bookId`** (UUID string) and optional `**initialPageIndex**` (1-based integer). No URL scheme / push entry in MVP.                                                                                                                                                                                  |
 | 3   | **Summary body (3B)**      | Ready `summary_text` is rendered as **Markdown** (see §7).                                                                                                                                                                                                                                                                                                 |
 | 4   | **Navigation (4B)**        | User can go **previous/next** using **on-screen controls** and **horizontal swipe** (see §6).                                                                                                                                                                                                                                                              |
 | 5   | **Unready pages (5A)**     | User may navigate to **any** in-range page; **each page** shows its own **loading / processing / failed** UI without blocking navigation globally.                                                                                                                                                                                                         |
@@ -62,7 +62,7 @@ These choices come from the agreed **A/B/C** selection for Epic 130 and must not
 | Param              | Type          | Required | Notes                                                                                                                                                                                                                                         |
 | ------------------ | ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bookId`           | `uuid` string | yes      | Must belong to `auth.uid()` via existing RLS on `books`.                                                                                                                                                                                      |
-| `initialPageIndex` | integer       | no       | **1-based** PDF page index. If omitted, default **`1`**. If provided out of range once `page_count` is known, **clamp** to `1..page_count` and optionally show a one-line toast (“Opened at page …”)—implementation choice, but **no crash**. |
+| `initialPageIndex` | integer       | no       | **1-based** PDF page index. If omitted, default `**1`**. If provided out of range once `page_count` is known, **clamp** to `1..page_count` and optionally show a one-line toast (“Opened at page …”)—implementation choice, but **no crash**. |
 
 
 ### 3.2 Stack contract
@@ -76,25 +76,25 @@ These choices come from the agreed **A/B/C** selection for Epic 130 and must not
 
 ### 4.1 Canonical API
 
-Use **`fetchPageSummariesForReader`** from `apps/mobile/src/lib/pageSummariesReader.ts`, which wraps RPC **`public.fetch_page_summaries_for_reader`** (see `docs/specs/mvp/summarization-epic-129.md` §11).
+Use `**fetchPageSummariesForReader`** from `apps/mobile/src/lib/pageSummariesReader.ts`, which wraps RPC `**public.fetch_page_summaries_for_reader**` (see `docs/specs/mvp/summarization-epic-129.md` §11).
 
 Hard limits from that contract (do not fork):
 
-- **`READER_PREFETCH_MAX_BATCH`** = **32** — max distinct indices per RPC call.  
-- **`next_page_hints`** — up to **3** rows for pages immediately **after** the highest **valid** requested index.
+- `**READER_PREFETCH_MAX_BATCH**` = **32** — max distinct indices per RPC call.  
+- `**next_page_hints`** — up to **3** rows for pages immediately **after** the highest **valid** requested index.
 
 ### 4.2 Mandatory prefetch pattern (normative)
 
 Let `p` be the **settled** current page index (1-based, in range). Let `N` be `page_count` from the latest successful fetch (`null` until known).
 
 1. **Initial load:** On first mount with resolved `p`, call the RPC with:
-  `p_page_indices = [p, p+1, p+2, p+3]` **intersected** with `[1..N]` once `N` is known; if `N` is still `null`, use **`[p, p+1, p+2, p+3]`** and rely on `invalid_page_index` rows for out-of-range indices until `N` arrives (then clamp subsequent calls).
+  `p_page_indices = [p, p+1, p+2, p+3]` **intersected** with `[1..N]` once `N` is known; if `N` is still `null`, use `**[p, p+1, p+2, p+3]`** and rely on `invalid_page_index` rows for out-of-range indices until `N` arrives (then clamp subsequent calls).
 2. **After every settled page change** (user finished navigating to new `p`): repeat the same **explicit forward window** `min(4, N - p + 1)` indices starting at `p` (i.e. always request **current plus up to three forward pages** when they exist). This satisfies **forward depth = 3** ahead of `p` when in range.
-3. **Hints merge:** For every successful response, merge **`pages`** and **`next_page_hints`** into a **page cache** keyed by `page_index` (later RPC results **overwrite** the same key). Hints are **not optional** to ignore when present—they must be merged so the UI can render neighbours without an extra round-trip when hints already cover the next indices.
+3. **Hints merge:** For every successful response, merge `**pages`** and `**next_page_hints**` into a **page cache** keyed by `page_index` (later RPC results **overwrite** the same key). Hints are **not optional** to ignore when present—they must be merged so the UI can render neighbours without an extra round-trip when hints already cover the next indices.
 4. **Deduping:** If a single batch would exceed **32** indices (should not happen with the 4-index window), split into multiple ordered calls in the same tick; never send duplicates (RPC rejects duplicates).
 5. **Stale responses:** If the user navigates quickly, **tag** each in-flight request with a **monotonic `requestId`**; ignore responses whose `requestId` is older than the latest settled `p` **unless** the response still updates pages **adjacent** to the current `p` (implementation may merge by `page_index` only—acceptable as long as the **current page** never flashes data from a **different** `page_index` row).
 
-**Rationale:** Epic choice **7C** requires a **fixed, testable** prefetch. Using **four explicit indices** (`p…p+3`) plus hint merge aligns with JTI-148’s **`next_page_hints`** (up to **3** rows) and keeps payloads tiny.
+**Rationale:** Epic choice **7C** requires a **fixed, testable** prefetch. Using **four explicit indices** (`p…p+3`) plus hint merge aligns with JTI-148’s `**next_page_hints`** (up to **3** rows) and keeps payloads tiny.
 
 ### 4.3 Refresh rules
 
@@ -105,7 +105,7 @@ Let `p` be the **settled** current page index (1-based, in range). Let `N` be `p
 
 ## 5. Cross-epic contract - last-read page (JTI-131 / JTI-154)
 
-Epic 131 owns **where** last-read is stored and how it syncs. Epic 130 owns **when** the reader reports a new “settled” page.
+Epic 131 owns **where** last-read is stored and how it syncs (see **`docs/specs/mvp/library-epic-131.md`** — **device-local AsyncStorage** for MVP, batch-safe flushes). Epic 130 owns **when** the reader reports a new “settled” page.
 
 **Normative events (call into the library/reading-progress module Epic 131 will implement):**
 
@@ -119,8 +119,6 @@ Epic 131 owns **where** last-read is stored and how it syncs. Epic 130 owns **wh
 **Do not** block UI on persistence success; **queue** and log failures (see Epic 132 later). If Epic 131 is not landed yet, implement **`onReaderSettledPage`** as a **no-op stub** in the reader feature folder with a **TODO(JTI-154)** comment so the hook exists.
 
 ---
-
-
 
 ## 6. JTI-150 - Navigation mechanics (controls + swipe)
 
@@ -197,8 +195,6 @@ If a PDF conflicts with **Frozen MVP** in `docs/specs/mvp/README.md`, **README w
 
 ---
 
-
-
 ## 9. JTI-151 - Page position indicator (Page x of y)
 
 ### 9.1 Display
@@ -208,7 +204,7 @@ If a PDF conflicts with **Frozen MVP** in `docs/specs/mvp/README.md`, **README w
 
 ### 9.2 Accuracy
 
-- **`N`** must equal **`page_count`** from **`fetch_page_summaries_for_reader`** (authoritative for the reader). If book metadata disagrees elsewhere in the app, **reader follows RPC**.
+- `**N`** must equal `**page_count**` from `**fetch_page_summaries_for_reader**` (authoritative for the reader). If book metadata disagrees elsewhere in the app, **reader follows RPC**.
 
 ### 9.3 Definition of done — JTI-151 (testable)
 
@@ -217,8 +213,6 @@ If a PDF conflicts with **Frozen MVP** in `docs/specs/mvp/README.md`, **README w
 - **Screen reader** label includes the same information (see §11).
 
 ---
-
-
 
 ## 10. JTI-152 - Loading, processing, failed, timeout UX
 
@@ -230,22 +224,22 @@ If a PDF conflicts with **Frozen MVP** in `docs/specs/mvp/README.md`, **README w
 | `pending`            | Calm **“Still preparing this page…”** skeleton or spinner; **no** scary red error.                                                                   |
 | `processing`         | Same family as `pending` with copy **“Summarizing…”** (exact strings can ship-tune).                                                                 |
 | `ready`              | Markdown body (§7).                                                                                                                                  |
-| `failed`             | Plain-English **`error_message`** (if non-null) + **`error_code`** in small mono for support logs + **Try again** button calling JTI-149 retry path. |
+| `failed`             | Plain-English `**error_message`** (if non-null) + `**error_code**` in small mono for support logs + **Try again** button calling JTI-149 retry path. |
 | `invalid_page_index` | **“This page is outside the book.”** + offer return to nearest valid (implementation choice: clamp to `N` or `1`).                                   |
 
 
 ### 10.2 Timeout (soft)
 
-There is **no** separate hard “network timeout” spec beyond whatever the Supabase client uses; however, if a fetch **hangs** beyond **30s** without response, show **non-destructive** “Still loading…” with **Cancel** (optional) that **keeps** `p` but aborts the UI wait and retries fetch for **`[p..p+3]`** on next user interaction.
+There is **no** separate hard “network timeout” spec beyond whatever the Supabase client uses; however, if a fetch **hangs** beyond **30s** without response, show **non-destructive** “Still loading…” with **Cancel** (optional) that **keeps** `p` but aborts the UI wait and retries fetch for `**[p..p+3]`** on next user interaction.
 
 ### 10.3 Alignment with JTI-149
 
 - **Try again** on `failed` must invoke the **same** server-side summarize entrypoint documented in Epic 129 (no client-only fake retry).  
-- After retry dispatch, page should transition to **`processing` / `pending`** in subsequent fetches.
+- After retry dispatch, page should transition to `**processing` / `pending`** in subsequent fetches.
 
 ### 10.4 Definition of done — JTI-152 (testable)
 
-- With mocked RPC returning `processing` for `p+1`, user can stay on **`p`** and see ready content, navigate to `p+1`, and see **only** `p+1`’s loading UI.  
+- With mocked RPC returning `processing` for `p+1`, user can stay on `**p**` and see ready content, navigate to `p+1`, and see **only** `p+1`’s loading UI.  
 - Forced `failed` shows **Try again** and **one** successful retry path in QA notes.  
 - No full-screen modal that **blocks** the entire reader for all pages while tail summarization runs (aligns with summarization §1.5).
 
@@ -253,8 +247,8 @@ There is **no** separate hard “network timeout” spec beyond whatever the Sup
 
 ## 11. Accessibility (minimum bar)
 
-- **Previous / Next** controls expose **`accessibilityLabel`** / **`accessibilityHint`** (“Go to previous page”, etc.).  
-- **Page indicator** is **`accessibilityElement`** grouping `Page X of Y`.  
+- **Previous / Next** controls expose `**accessibilityLabel`** / `**accessibilityHint**` (“Go to previous page”, etc.).  
+- **Page indicator** is `**accessibilityElement`** grouping `Page X of Y`.  
 - **Swipe:** do not rely on swipe alone—**buttons remain** the accessible path.  
 - **Dynamic type:** if quick win exists in the stack, avoid **fixed pixel** text below 16sp equivalent for body.
 
@@ -291,8 +285,6 @@ Vertical slices are fine if each PR satisfies its issue’s **Definition of done
 
 ---
 
-
-
 ## 14. Epic JTI-130 - acceptance criteria (whole epic "done")
 
 - Reader meets **§2** table and all **Definition of done** bullets in **§6.4**, **§9.3**, and **§10.4**.  
@@ -314,7 +306,7 @@ Vertical slices are fine if each PR satisfies its issue’s **Definition of done
 
 ## 16. Linear hygiene (keep tickets short)
 
-Epic **JTI-130** should link to this file with **`#jti-130`** (epic acceptance). Issues **JTI-150** / **JTI-151** / **JTI-152** should link to **`#jti-150`** / **`#jti-151`** / **`#jti-152`** respectively.
+Epic **JTI-130** should link to this file with `**#jti-130`** (epic acceptance). Issues **JTI-150** / **JTI-151** / **JTI-152** should link to `**#jti-150`** / `**#jti-151**` / `**#jti-152**` respectively.
 
 GitHub URL base (after push to `main`):
 
