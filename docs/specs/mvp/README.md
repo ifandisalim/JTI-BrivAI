@@ -98,6 +98,10 @@ This file is the **entry spec** for the MVP. **Linear issues link here** instead
 
 **Goal:** Read summaries **page-by-page** with forward/back navigation, page position, and non-blocking loading states.
 
+**Detailed spec (Epic 130, JTI-150–JTI-152):** `[docs/specs/mvp/reader-epic-130.md](reader-epic-130.md)` — start at anchor `#jti-130` for epic acceptance; `#jti-150`, `#jti-151`, `#jti-152` for child issues.
+
+**Reader fetch RPC (JTI-148):** see `[docs/specs/mvp/summarization-epic-129.md](summarization-epic-129.md)` §11 and `apps/mobile/src/lib/pageSummariesReader.ts`.
+
 ---
 
 ## Epic: Library resume and history
