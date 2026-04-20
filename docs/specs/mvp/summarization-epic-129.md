@@ -296,6 +296,11 @@ One bad page **does not ruin** the whole book; automatic retries are bounded; us
 - **“Try again”** for a failed page re-enters the pipeline **without** corrupting neighbouring `ready` pages.  
 - **No credit charge** until a successful `ready` transition after retry.
 
+**As implemented (JTI-149):**
+
+- **Edge Function** `summarize-book-page`: up to **3** automatic retries after the first attempt (**4** tries total) for `provider_error`, `provider_rate_limited`, and `empty_model_output`; backoff **250ms → 500ms → 1000ms** between tries. Other failure codes (e.g. empty page text, provider 4xx) are **not** auto-retried (avoids burning credits on hopeless cases per §1.5 row 6 intent). OpenAI **4xx** responses (except 429) map to `provider_bad_request` (no auto-retry).
+- **DB RPC** `public.save_page_summary_failed(p_book_id, p_page_index, p_error_code, p_error_message, p_user_id)` — `security definer`, **`service_role` only**; sets `failed` + clears `summary_text`; **refuses** if the row is already `ready` (no poisoning). User retry calls the same summarize path as the first attempt; credits still flow only through `save_page_summary_ready` on success.
+
 ---
 
 ## 13. Out of scope (explicit)

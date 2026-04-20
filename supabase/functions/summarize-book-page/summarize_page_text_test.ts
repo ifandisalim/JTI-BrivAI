@@ -81,3 +81,21 @@ Deno.test('summarizePageText maps OpenAI 429 to rate limit', async () => {
   assertEquals(r.ok, false);
   if (!r.ok) assertEquals(r.error_code, 'provider_rate_limited');
 });
+
+Deno.test('summarizePageText maps OpenAI 4xx (non-429) to client error', async () => {
+  const stubFetch: typeof fetch = async () =>
+    new Response(JSON.stringify({ error: { message: 'bad' } }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  const r = await summarizePageText({
+    pageIndex: 1,
+    pageText: 'Enough text here for the gate. Hello world.',
+    apiKey: 'sk-test',
+    model: 'gpt-4o-mini',
+    fetchImpl: stubFetch,
+  });
+  assertEquals(r.ok, false);
+  if (!r.ok) assertEquals(r.error_code, 'provider_bad_request');
+});
