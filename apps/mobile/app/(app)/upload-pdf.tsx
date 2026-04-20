@@ -200,18 +200,50 @@ export default function UploadPdfScreen() {
       return;
     }
 
-    // JTI-142 will move this through `validating` with server checks; until then mark ready after bytes land.
-    const { error: finalizeError } = await supabase
-      .from('books')
-      .update({ status: BOOK_STATUS.ready, error_code: null, error_message: null })
-      .eq('id', bookId);
+    const { data: fnData, error: fnError } = await supabase.functions.invoke('validate-book-pdf', {
+      body: { book_id: bookId },
+    });
 
-    if (finalizeError) {
+    type ValidateResponse = {
+      success?: boolean;
+      error_code?: string;
+      error_message?: string;
+    };
+
+    const parsePayload = (): ValidateResponse | null => {
+      if (fnData && typeof fnData === 'object' && !Array.isArray(fnData)) {
+        return fnData as ValidateResponse;
+      }
+      return null;
+    };
+
+    if (fnError) {
       await removeStorageSilently(storagePath);
-      await failBookRow(bookId, BOOK_STATUS.failed, 'Saved the file but could not finish setup.', 'finalize_failed');
+      await failBookRow(
+        bookId,
+        BOOK_STATUS.failed,
+        'We could not finish checking your PDF. Check your connection and try uploading again.',
+        'validation_unavailable',
+      );
       setPhase('idle');
-      setMessage('Something went wrong after upload.');
-      setDetail('Try uploading again.');
+      setMessage('Could not finish checking your PDF.');
+      setDetail(
+        'Check your connection, then try again. If the problem keeps happening, pick the PDF again from the start.',
+      );
+      if (__DEV__) console.warn('[upload-pdf] validate-book-pdf invoke', fnError.message);
+      return;
+    }
+
+    const payload = parsePayload();
+    if (!payload?.success) {
+      await removeStorageSilently(storagePath);
+      const userMsg =
+        typeof payload?.error_message === 'string' && payload.error_message.trim().length > 0
+          ? payload.error_message.trim()
+          : 'This PDF did not pass our checks. Choose another PDF and try again.';
+      setPhase('idle');
+      setMessage(userMsg);
+      setDetail('You can pick a different PDF from the Add book screen, or go back to the library to see this import as failed.');
       return;
     }
 
@@ -265,10 +297,10 @@ export default function UploadPdfScreen() {
         {busy ? (
           <View style={styles.progressBlock}>
             <ActivityIndicator size="large" />
-            <Text style={styles.progressTitle}>Uploading…</Text>
+            <Text style={styles.progressTitle}>Uploading and checking…</Text>
             <Text style={styles.progressCaption}>
-              Stay on this screen until the upload finishes. This MVP build does not show byte-level progress; the
-              spinner means work is in progress.
+              Stay on this screen until the upload finishes and the server finishes checking your PDF (type, size, and
+              page count). This MVP build does not show byte-level progress; the spinner means work is in progress.
             </Text>
           </View>
         ) : (
