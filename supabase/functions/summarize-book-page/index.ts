@@ -1,5 +1,6 @@
 /**
  * JTI-145 + JTI-147 + JTI-149: Summarize one page of extracted text and persist at (book_id, page_index).
+ * For batched extract+summarize in priority order (JTI-146), see Edge Function `summarize-book-pages`.
  * POST JSON: { book_id: string, page_index: number, page_text: string }
  * Credit idempotency key (Epic 129 §3): summary_charge:{book_id}:{page_index} (see save_page_summary_ready in DB).
  * Requires Authorization: Bearer <user JWT>. API keys stay in Edge secrets only.
@@ -9,23 +10,8 @@
  * after a successful model response; failures use `save_page_summary_failed` and never overwrite `ready`.
  */
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-import { summarizePageText } from '../_shared/summarize_page_text.ts';
-
-/** JTI-149: max automatic retries after the first attempt (total attempts = 1 + this value). */
-const SUMMARY_AUTO_RETRY_MAX = 3;
-
-/** Milliseconds between attempts: index 0 after 1st fail, 1 after 2nd, … */
-const SUMMARY_RETRY_BACKOFF_MS = [250, 500, 1000] as const;
-
-const TRANSIENT_SUMMARY_ERROR_CODES = new Set<string>([
-  'provider_error',
-  'provider_rate_limited',
-  'empty_model_output',
-]);
-
-function sleepMs(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { persistPageSummaryFailed } from '../_shared/persist_page_summary.ts';
+import { summarizePageTextWithRetries } from '../_shared/summarize_page_retry.ts';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -37,33 +23,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
-}
-
-async function persistPageSummaryFailed(args: {
-  admin: SupabaseClient;
-  bookId: string;
-  pageIndex: number;
-  userId: string;
-  errorCode: string;
-  errorMessage: string;
-}): Promise<{ ok: true } | { ok: false; rpc_error: string }> {
-  const { admin, bookId, pageIndex, userId, errorCode, errorMessage } = args;
-  const { data, error } = await admin.rpc('save_page_summary_failed', {
-    p_book_id: bookId,
-    p_page_index: pageIndex,
-    p_error_code: errorCode,
-    p_error_message: errorMessage,
-    p_user_id: userId,
-  });
-  if (error) {
-    return { ok: false, rpc_error: error.message };
-  }
-  const payload = data as Record<string, unknown> | null;
-  if (!payload || payload.ok !== true) {
-    const err = typeof payload?.error === 'string' ? payload.error : 'save_failed';
-    return { ok: false, rpc_error: err };
-  }
-  return { ok: true };
 }
 
 Deno.serve(async (req) => {
@@ -166,22 +125,11 @@ Deno.serve(async (req) => {
     });
   }
 
-  let result = await summarizePageText({
+  const result = await summarizePageTextWithRetries({
     pageIndex,
     pageText,
     apiKey: openaiKey,
   });
-
-  for (let attempt = 0; attempt < SUMMARY_AUTO_RETRY_MAX && !result.ok; attempt++) {
-    if (!TRANSIENT_SUMMARY_ERROR_CODES.has(result.error_code)) break;
-    const delay = SUMMARY_RETRY_BACKOFF_MS[attempt] ?? SUMMARY_RETRY_BACKOFF_MS[SUMMARY_RETRY_BACKOFF_MS.length - 1];
-    await sleepMs(delay);
-    result = await summarizePageText({
-      pageIndex,
-      pageText,
-      apiKey: openaiKey,
-    });
-  }
 
   if (!result.ok) {
     const persist = await persistPageSummaryFailed({
