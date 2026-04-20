@@ -1,8 +1,7 @@
 ---
-
-## name: end-of-day
-
+name: end-of-day
 description: End-of-day shutdown that logs what was worked on so the next session can pick up where things left off. Trigger this skill whenever the user says "end of day", "wrap up", "we're done", "that's it for today", "log today", "done for the day", "goodnight", "shutdown", or anything that signals they're finishing a work session. If the user seems to be wrapping up, suggest running this before they go.
+---
 
 # End of Day
 
