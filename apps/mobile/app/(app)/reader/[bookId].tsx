@@ -5,6 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text, View } from '@/components/Themed';
+import { useAuthSession } from '@/src/auth/authSession';
 import { ReaderMarkdown } from '@/src/features/reader/ReaderMarkdown';
 import { onReaderSettledPage, onReaderUnmount } from '@/src/features/reader/readingProgressStub';
 import {
@@ -14,6 +15,14 @@ import {
   READER_SWIPE_VELOCITY_PT_PER_S,
 } from '@/src/features/reader/readerSwipeConstants';
 import { useReaderPageCache } from '@/src/features/reader/useReaderPageCache';
+import {
+  fallbackStartToastStorageKey,
+  hasSeenContentStartToast,
+  markContentStartToastSeen,
+  messageForContentStartToast,
+  smartStartToastStorageKey,
+  type ContentStartMethod,
+} from '@/src/lib/contentStartOpen';
 import type { PageSummaryReaderRow } from '@/src/lib/pageSummariesReader';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
 
@@ -123,19 +132,43 @@ function pageBodyForRow(
   }
 }
 
+type BookOpenMeta = {
+  content_start_page_index: number;
+  content_start_method: ContentStartMethod;
+  page_count: number | null;
+};
+
+function clampPageToBook(page: number, pageCount: number | null): number {
+  if (pageCount === null || !Number.isInteger(pageCount) || pageCount < 1) {
+    return Math.max(1, page);
+  }
+  return Math.min(Math.max(1, page), pageCount);
+}
+
 export default function ReaderScreen() {
   const { bookId, page: pageParam, initialPageIndex: initialPageParam } = useLocalSearchParams<{
     bookId: string;
     page?: string;
     initialPageIndex?: string;
   }>();
+  const { session } = useAuthSession();
+  const userId = session?.user.id ?? null;
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+
+  /** True when the route supplies an explicit starting page (deep link / future callers). */
+  const explicitInitial = useMemo(
+    () => initialPageParam !== undefined || pageParam !== undefined,
+    [initialPageParam, pageParam],
+  );
 
   const requestedInitial = useMemo(
     () => parseInitialPage(initialPageParam ?? pageParam),
     [initialPageParam, pageParam],
   );
+
+  const [bookOpenMeta, setBookOpenMeta] = useState<BookOpenMeta | null>(null);
+  const [contentStartToast, setContentStartToast] = useState<string | null>(null);
 
   const client = isSupabaseConfigured() ? supabase : null;
   const {
@@ -155,6 +188,60 @@ export default function ReaderScreen() {
 
   const [settledPage, setSettledPage] = useState(requestedInitial);
   const openedLogged = useRef(false);
+  const contentStartToastShown = useRef(false);
+
+  useEffect(() => {
+    setBookOpenMeta(null);
+    setContentStartToast(null);
+    contentStartToastShown.current = false;
+    setSettledPage(requestedInitial);
+  }, [bookId, requestedInitial]);
+
+  useEffect(() => {
+    if (!client || !bookId) {
+      setBookOpenMeta(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const { data, error } = await client
+        .from('books')
+        .select('content_start_page_index, content_start_method, page_count')
+        .eq('id', bookId)
+        .maybeSingle();
+
+      if (cancelled || error || !data) {
+        if (!cancelled && error && __DEV__) {
+          console.warn('[reader] book_open_meta_fetch', { book_id: bookId, message: error.message });
+        }
+        return;
+      }
+
+      const rawS = data.content_start_page_index;
+      const S =
+        typeof rawS === 'number' && Number.isInteger(rawS) ? rawS : 1;
+      const methodRaw = data.content_start_method;
+      const method: ContentStartMethod =
+        methodRaw === 'heuristic' || methodRaw === 'llm' || methodRaw === 'fallback_default'
+          ? methodRaw
+          : 'fallback_default';
+      const pc = data.page_count;
+      const page_count =
+        typeof pc === 'number' && Number.isInteger(pc) && pc >= 1 ? pc : null;
+
+      setBookOpenMeta({
+        content_start_page_index: S,
+        content_start_method: method,
+        page_count,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, client]);
 
   useEffect(() => {
     if (!bookId || openedLogged.current) return;
@@ -162,10 +249,48 @@ export default function ReaderScreen() {
     console.log('[reader] reader_open', { book_id: bookId, initial_page: requestedInitial });
   }, [bookId, requestedInitial]);
 
+  /** Epic 129 §16.2 — without explicit `page` / `initialPageIndex`, open at **S** from `books`. */
+  useEffect(() => {
+    if (explicitInitial || !bookOpenMeta) return;
+    const n = pageCount ?? bookOpenMeta.page_count;
+    const s = clampPageToBook(bookOpenMeta.content_start_page_index, n);
+    setSettledPage(s);
+  }, [bookId, bookOpenMeta, explicitInitial, pageCount]);
+
   useEffect(() => {
     if (pageCount === null) return;
     setSettledPage((p) => Math.min(Math.max(1, p), pageCount));
   }, [pageCount]);
+
+  /** §16.3 — one-time toast per book per device (AsyncStorage). */
+  useEffect(() => {
+    if (!bookId || !userId || !bookOpenMeta || contentStartToastShown.current) return;
+
+    const msg = messageForContentStartToast(
+      bookOpenMeta.content_start_method,
+      bookOpenMeta.content_start_page_index,
+    );
+    if (!msg) return;
+
+    const storageKey =
+      bookOpenMeta.content_start_method === 'fallback_default'
+        ? fallbackStartToastStorageKey(userId, bookId)
+        : smartStartToastStorageKey(userId, bookId);
+
+    let cancelled = false;
+
+    void (async () => {
+      const seen = await hasSeenContentStartToast(storageKey);
+      if (cancelled || seen) return;
+      contentStartToastShown.current = true;
+      setContentStartToast(msg);
+      await markContentStartToastSeen(storageKey);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, bookOpenMeta, userId]);
 
   useEffect(() => {
     if (!bookId) return;
@@ -277,6 +402,12 @@ export default function ReaderScreen() {
           {fetchError ? (
             <View style={styles.banner}>
               <Text style={styles.bannerText}>{fetchError}</Text>
+            </View>
+          ) : null}
+
+          {contentStartToast ? (
+            <View style={styles.infoBanner} accessibilityRole="text">
+              <Text style={styles.infoBannerText}>{contentStartToast}</Text>
             </View>
           ) : null}
 
@@ -441,6 +572,16 @@ const styles = StyleSheet.create({
   },
   bannerText: {
     fontSize: 14,
+  },
+  infoBanner: {
+    backgroundColor: 'rgba(52, 199, 89, 0.12)',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  infoBannerText: {
+    fontSize: 14,
+    lineHeight: 20,
   },
   pageIndicator: {
     marginBottom: 12,
