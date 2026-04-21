@@ -181,6 +181,10 @@ export default function ReaderScreen() {
 
   const pageLabel =
     pageCount === null ? `Page ${settledPage}` : `Page ${settledPage} of ${pageCount}`;
+  const pageIndicatorA11yLabel =
+    pageCount === null
+      ? `Page ${settledPage}, total pages loading`
+      : `Page ${settledPage} of ${pageCount}`;
 
   if (!bookId) {
     return (
@@ -217,11 +221,16 @@ export default function ReaderScreen() {
 
           <View
             style={styles.pageIndicator}
+            accessible
             accessibilityRole="text"
-            accessibilityLabel={pageLabel}>
-            <Text style={styles.pageIndicatorText}>{pageLabel}</Text>
+            accessibilityLabel={pageIndicatorA11yLabel}>
+            <Text style={styles.pageIndicatorText} importantForAccessibility="no">
+              {pageLabel}
+            </Text>
             {pageCount === null ? (
-              <Text style={styles.subtle}>Total pages loading…</Text>
+              <Text style={styles.subtle} importantForAccessibility="no">
+                Total pages loading…
+              </Text>
             ) : null}
           </View>
 
