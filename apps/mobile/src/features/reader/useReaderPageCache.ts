@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { getReaderPrefetchWindowIndices } from '@/src/features/reader/readerPrefetchWindow';
 import { retrySummarizePageWithExtract } from '@/src/lib/readerRetrySummarize';
 import {
   fetchPageSummariesForReader,
@@ -13,16 +14,6 @@ export const READER_PREFETCH_HANG_MS = 30_000;
 
 function uniqueSortedIndices(indices: number[]): number[] {
   return [...new Set(indices)].sort((a, b) => a - b);
-}
-
-function windowIndicesFromP(p: number, pageCount: number | null): number[] {
-  const start = Math.max(1, p);
-  const end = pageCount === null ? start + 3 : Math.min(pageCount, start + 3);
-  const out: number[] = [];
-  for (let i = start; i <= end; i += 1) {
-    out.push(i);
-  }
-  return out;
 }
 
 function mergeRows(
@@ -41,6 +32,8 @@ export type UseReaderPageCacheResult = {
   cache: Map<number, PageSummaryReaderRow>;
   fetchError: string | null;
   summarizeRetryError: string | null;
+  /** True while user-triggered summarize retry runs (distinct from background prefetch §5). */
+  summarizeRetryBusy: boolean;
   prefetching: boolean;
   /** §10.2 — true after 30s prefetch with no completion; dismiss with cancelHang. */
   prefetchHangVisible: boolean;
@@ -63,6 +56,7 @@ export function useReaderPageCache(
   const [cache, setCache] = useState<Map<number, PageSummaryReaderRow>>(() => new Map());
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [summarizeRetryError, setSummarizeRetryError] = useState<string | null>(null);
+  const [summarizeRetryBusy, setSummarizeRetryBusy] = useState(false);
   const [prefetching, setPrefetching] = useState(false);
   const [hangDismissed, setHangDismissed] = useState(false);
   const [hangElapsed, setHangElapsed] = useState(false);
@@ -73,6 +67,7 @@ export function useReaderPageCache(
     setCache(new Map());
     setFetchError(null);
     setSummarizeRetryError(null);
+    setSummarizeRetryBusy(false);
     setHangDismissed(false);
     setHangElapsed(false);
   }, [bookId]);
@@ -175,7 +170,7 @@ export function useReaderPageCache(
     async (p: number) => {
       if (!client || !bookId) return;
       const pc = pageCountRef.current;
-      const indices = windowIndicesFromP(p, pc);
+      const indices = getReaderPrefetchWindowIndices(p, pc);
       if (indices.length === 0) return;
 
       inFlightRef.current += 1;
@@ -205,21 +200,16 @@ export function useReaderPageCache(
     async (p: number) => {
       if (!client || !bookId) return;
       setSummarizeRetryError(null);
-      inFlightRef.current += 1;
-      setPrefetching(true);
+      setSummarizeRetryBusy(true);
       try {
         const invoke = await retrySummarizePageWithExtract(client, bookId, p);
         if (!invoke.ok) {
           setSummarizeRetryError(invoke.message);
         }
         await runFetch([p]);
-        await runFetch(windowIndicesFromP(p, pageCountRef.current));
+        await runFetch(getReaderPrefetchWindowIndices(p, pageCountRef.current));
       } finally {
-        inFlightRef.current -= 1;
-        if (inFlightRef.current <= 0) {
-          inFlightRef.current = 0;
-          setPrefetching(false);
-        }
+        setSummarizeRetryBusy(false);
       }
     },
     [bookId, client, runFetch],
@@ -234,6 +224,7 @@ export function useReaderPageCache(
       cache,
       fetchError,
       summarizeRetryError,
+      summarizeRetryBusy,
       prefetching,
       prefetchHangVisible,
       prefetchHangDeferred,
@@ -253,6 +244,7 @@ export function useReaderPageCache(
       prefetching,
       reloadPrefetchWindow,
       retryPage,
+      summarizeRetryBusy,
       summarizeRetryError,
     ],
   );

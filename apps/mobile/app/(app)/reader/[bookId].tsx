@@ -143,6 +143,7 @@ export default function ReaderScreen() {
     cache,
     fetchError,
     summarizeRetryError,
+    summarizeRetryBusy,
     prefetching,
     prefetchHangVisible,
     prefetchHangDeferred,
@@ -336,7 +337,7 @@ export default function ReaderScreen() {
               pageCount,
               onClampToValidPage: onClampInvalidToValidPage,
               onTryAgainSummarize,
-              retryBusy: prefetching,
+              retryBusy: summarizeRetryBusy,
               summarizeRetryFailedMessage: summarizeRetryError,
             })}
           </ScrollView>
