@@ -129,9 +129,9 @@ export default function UploadPdfScreen() {
       return;
     }
 
-    let body: ArrayBuffer;
+    let pdfBytes: ArrayBuffer;
     try {
-      body = await readPickerUriAsArrayBuffer(asset.uri);
+      pdfBytes = await readPickerUriAsArrayBuffer(asset.uri);
     } catch (e) {
       const errText = e instanceof Error ? e.message : String(e);
       setPhase('idle');
@@ -141,14 +141,14 @@ export default function UploadPdfScreen() {
       return;
     }
 
-    if (body.byteLength > BOOK_MAX_BYTES) {
+    if (pdfBytes.byteLength > BOOK_MAX_BYTES) {
       setPhase('idle');
       setMessage('This PDF is over 50 MB.');
       setDetail('Choose another PDF under 50 MB.');
       return;
     }
 
-    if (!pdfHeaderLooksLikePdf(body)) {
+    if (!pdfHeaderLooksLikePdf(pdfBytes)) {
       setPhase('idle');
       setMessage('This file does not look like a real PDF.');
       setDetail('Choose another PDF from your library.');
@@ -158,7 +158,7 @@ export default function UploadPdfScreen() {
     const bookId = newBookId();
     const storagePath = `${userId}/${bookId}.pdf`;
     const title = titleFromPickerName(asset.name);
-    const byteSize = declaredSize && declaredSize > 0 ? declaredSize : body.byteLength;
+    const byteSize = declaredSize && declaredSize > 0 ? declaredSize : pdfBytes.byteLength;
 
     const { error: insertError } = await supabase.from('books').insert({
       id: bookId,
@@ -181,7 +181,7 @@ export default function UploadPdfScreen() {
 
     const { error: uploadError } = await supabase.storage
       .from(BOOK_PDFS_BUCKET)
-      .upload(storagePath, body, {
+      .upload(storagePath, pdfBytes, {
         contentType: 'application/pdf',
         upsert: false,
       });

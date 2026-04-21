@@ -364,6 +364,21 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# Edge gateway JWT check only supports legacy HS256. New projects may issue ES256 user JWTs,
+# which return UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM at the gateway. Each function below
+# already validates `Authorization: Bearer` via `createClient(..., service_role).auth.getUser(jwt)`.
+[functions.validate-book-pdf]
+verify_jwt = false
+
+[functions.extract-book-pdf-page]
+verify_jwt = false
+
+[functions.summarize-book-page]
+verify_jwt = false
+
+[functions.summarize-book-pages]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
