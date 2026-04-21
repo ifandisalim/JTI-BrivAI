@@ -1,6 +1,12 @@
 import { Stack, router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 
 import { Text, View } from '@/components/Themed';
 import { BOOK_STATUS } from '@/src/config/books';
@@ -16,10 +22,24 @@ type LibraryBookRow = {
   status: string;
   error_message: string | null;
   created_at: string;
+  page_count: number | null;
+  content_start_page_index: number | null;
+  content_start_method: string | null;
 };
+
+/** library-epic-131 §2 sort 4C + §3.1 — title asc, tie-break `created_at` desc. */
+function sortLibraryBooks(rows: LibraryBookRow[]): LibraryBookRow[] {
+  return [...rows].sort((a, b) => {
+    const cmp = a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    if (cmp !== 0) return cmp;
+    return b.created_at.localeCompare(a.created_at);
+  });
+}
 
 /** Dev-only: stable key prefix so repeated taps use new idempotency keys (JTI-140 / spec §8). */
 const DEV_CONSUME_KEY_PREFIX = 'dev:jti140:library:';
+
+type LoadBooksReason = 'focus' | 'pull';
 
 export default function LibraryScreen() {
   const { balance, loadState, loadError, refresh } = useCreditBalance();
@@ -27,32 +47,60 @@ export default function LibraryScreen() {
   const [consumeMessage, setConsumeMessage] = useState<string | null>(null);
   const [books, setBooks] = useState<LibraryBookRow[]>([]);
   const [booksLoading, setBooksLoading] = useState(false);
+  const [booksRefreshing, setBooksRefreshing] = useState(false);
   const [booksError, setBooksError] = useState<string | null>(null);
+  const booksCountRef = useRef(0);
 
-  const loadBooks = useCallback(async () => {
+  const loadBooks = useCallback(async (reason: LoadBooksReason = 'focus') => {
     if (!isSupabaseConfigured() || !supabase) {
+      booksCountRef.current = 0;
       setBooks([]);
       setBooksError(null);
+      setBooksLoading(false);
+      setBooksRefreshing(false);
       return;
     }
-    setBooksLoading(true);
-    setBooksError(null);
+
+    const hadBooks = booksCountRef.current > 0;
+    const showBlockingSpinner = reason === 'focus' && !hadBooks;
+    if (reason === 'pull') {
+      setBooksRefreshing(true);
+    } else if (showBlockingSpinner) {
+      setBooksLoading(true);
+      setBooksError(null);
+    }
+    // Focus revisit with data already shown: silent refetch (no RefreshControl spinner).
+
     const { data, error } = await supabase
       .from('books')
-      .select('id, title, status, error_message, created_at')
-      .order('created_at', { ascending: false });
+      .select(
+        'id, title, status, error_message, created_at, page_count, content_start_page_index, content_start_method',
+      );
+
     setBooksLoading(false);
+    setBooksRefreshing(false);
+
     if (error) {
       setBooksError(error.message);
-      setBooks([]);
+      setBooks((prev) => {
+        if (prev.length === 0) {
+          booksCountRef.current = 0;
+          return [];
+        }
+        return prev;
+      });
       return;
     }
-    setBooks((data ?? []) as LibraryBookRow[]);
+
+    setBooksError(null);
+    const sorted = sortLibraryBooks((data ?? []) as LibraryBookRow[]);
+    booksCountRef.current = sorted.length;
+    setBooks(sorted);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void loadBooks();
+      void loadBooks('focus');
     }, [loadBooks]),
   );
 
@@ -105,6 +153,10 @@ export default function LibraryScreen() {
     await refresh();
   }, [refresh]);
 
+  const onBooksRefresh = useCallback(() => {
+    void loadBooks('pull');
+  }, [loadBooks]);
+
   const balanceLabel =
     loadState === 'loading' || loadState === 'idle' ? (
       <View style={styles.balanceRow}>
@@ -133,109 +185,137 @@ export default function LibraryScreen() {
           ),
         }}
       />
-      <View style={styles.container}>
-        <View style={styles.creditsBanner}>
-          {balanceLabel}
-          {!canSummarize && loadState === 'ready' && balance !== null && (
-            <Text style={styles.outOfCredits}>
-              You are out of credits. Summarizing is blocked until you have at least{' '}
-              {CREDITS_PER_SUMMARIZED_PAGE} credit
-              {CREDITS_PER_SUMMARIZED_PAGE === 1 ? '' : 's'}.
-            </Text>
-          )}
-        </View>
-
-        <Pressable style={styles.addBookButton} onPress={() => router.push('/upload-pdf')}>
-          <Text style={styles.addBookButtonText}>Add book</Text>
-        </Pressable>
-
-        <Text style={styles.sectionTitle}>Your books</Text>
-        {booksLoading ? (
-          <View style={styles.booksLoadingRow}>
-            <ActivityIndicator />
-            <Text style={styles.caption}>Loading books…</Text>
+      <View style={styles.screen}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={booksRefreshing} onRefresh={onBooksRefresh} />
+          }>
+          <View style={styles.creditsBanner}>
+            {balanceLabel}
+            {!canSummarize && loadState === 'ready' && balance !== null && (
+              <Text style={styles.outOfCredits}>
+                You are out of credits. Summarizing is blocked until you have at least{' '}
+                {CREDITS_PER_SUMMARIZED_PAGE} credit
+                {CREDITS_PER_SUMMARIZED_PAGE === 1 ? '' : 's'}.
+              </Text>
+            )}
           </View>
-        ) : booksError ? (
-          <Text style={styles.errorText}>{booksError}</Text>
-        ) : books.length === 0 ? (
-          <Text style={styles.caption}>No books yet. Tap Add book to upload a PDF.</Text>
-        ) : (
-          <ScrollView style={styles.bookList} contentContainerStyle={styles.bookListContent}>
-            {books.map((b) => {
-              const failed = b.status === BOOK_STATUS.failed;
-              // Reader is still a placeholder; opening does not spend credits (Epic 127).
-              const canOpen = b.status === BOOK_STATUS.ready;
-              return (
-                <Pressable
-                  key={b.id}
-                  style={[styles.bookRow, failed && styles.bookRowFailed]}
-                  disabled={!canOpen}
-                  onPress={() => {
-                    if (canOpen) router.push(`/reader/${b.id}`);
-                  }}>
-                  <Text style={styles.bookTitle} numberOfLines={2}>
-                    {b.title}
-                  </Text>
-                  <Text style={styles.bookMeta}>
-                    {failed
-                      ? 'Failed'
-                      : b.status === BOOK_STATUS.uploading
-                        ? 'Uploading'
-                        : b.status === BOOK_STATUS.validating
-                          ? 'Checking PDF'
-                          : b.status === BOOK_STATUS.ready
-                            ? 'Ready'
-                            : b.status}
-                  </Text>
-                  {failed && b.error_message ? (
-                    <Text style={styles.bookError} numberOfLines={3}>
-                      {b.error_message}
+
+          <Pressable style={styles.addBookButton} onPress={() => router.push('/upload-pdf')}>
+            <Text style={styles.addBookButtonText}>Add book</Text>
+          </Pressable>
+
+          <Text style={styles.sectionTitle}>Your books</Text>
+          {booksLoading ? (
+            <View style={styles.booksLoadingRow}>
+              <ActivityIndicator />
+              <Text style={styles.caption}>Loading books…</Text>
+            </View>
+          ) : booksError ? (
+            <View style={styles.booksErrorBlock}>
+              <Text style={styles.errorText}>{booksError}</Text>
+              <Pressable style={styles.retryButton} onPress={onBooksRefresh}>
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : books.length === 0 ? (
+            <View style={styles.emptyBooks}>
+              <Text style={styles.caption}>No books yet. Upload a PDF to see it here.</Text>
+              <Pressable style={styles.emptyAddLink} onPress={() => router.push('/upload-pdf')}>
+                <Text style={styles.emptyAddLinkText}>Add book</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.bookList}>
+              {books.map((b) => {
+                const failed = b.status === BOOK_STATUS.failed;
+                const canOpen = b.status === BOOK_STATUS.ready;
+                return (
+                  <Pressable
+                    key={b.id}
+                    style={[
+                      styles.bookRow,
+                      failed && styles.bookRowFailed,
+                      !canOpen && styles.bookRowNotReady,
+                    ]}
+                    disabled={!canOpen}
+                    onPress={() => {
+                      if (canOpen) router.push(`/reader/${b.id}`);
+                    }}>
+                    <Text style={styles.bookTitle} numberOfLines={2}>
+                      {b.title}
                     </Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        )}
+                    <Text style={styles.bookMeta}>
+                      {failed
+                        ? 'Failed'
+                        : b.status === BOOK_STATUS.uploading
+                          ? 'Uploading'
+                          : b.status === BOOK_STATUS.validating
+                            ? 'Checking PDF'
+                            : b.status === BOOK_STATUS.ready
+                              ? 'Ready'
+                              : b.status}
+                    </Text>
+                    {failed && b.error_message ? (
+                      <Text style={styles.bookError} numberOfLines={3}>
+                        {b.error_message}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
 
-        <Text style={styles.sectionTitle}>Developer</Text>
-        <Text style={styles.caption}>Opens the reader with a hardcoded book id to verify dynamic routes.</Text>
+          <Text style={styles.sectionTitle}>Developer</Text>
+          <Text style={styles.caption}>
+            Opens the reader with a hardcoded book id to verify dynamic routes.
+          </Text>
 
-        <Pressable
-          style={[styles.button, !canSummarize && styles.buttonDisabled]}
-          disabled={!canSummarize}
-          onPress={() => {
-            router.push(`/reader/${DEMO_BOOK_ID}`);
-          }}>
-          <Text style={styles.buttonText}>Open reader ({DEMO_BOOK_ID})</Text>
-        </Pressable>
+          <Pressable
+            style={[styles.button, !canSummarize && styles.buttonDisabled]}
+            disabled={!canSummarize}
+            onPress={() => {
+              router.push(`/reader/${DEMO_BOOK_ID}`);
+            }}>
+            <Text style={styles.buttonText}>Open reader ({DEMO_BOOK_ID})</Text>
+          </Pressable>
 
-        {__DEV__ && isSupabaseConfigured() && supabase && (
-          <View style={styles.devBlock}>
-            <Text style={styles.devLabel}>Developer test (consume_credit)</Text>
-            <Pressable
-              style={[styles.devButton, (!canSummarize || consumeBusy) && styles.buttonDisabled]}
-              disabled={!canSummarize || consumeBusy}
-              onPress={() => void onDevConsumeTestCredit()}>
-              <Text style={styles.devButtonText}>{consumeBusy ? 'Working…' : 'Use 1 test credit'}</Text>
-            </Pressable>
-            {consumeMessage ? <Text style={styles.devMessage}>{consumeMessage}</Text> : null}
-          </View>
-        )}
+          {__DEV__ && isSupabaseConfigured() && supabase && (
+            <View style={styles.devBlock}>
+              <Text style={styles.devLabel}>Developer test (consume_credit)</Text>
+              <Pressable
+                style={[styles.devButton, (!canSummarize || consumeBusy) && styles.buttonDisabled]}
+                disabled={!canSummarize || consumeBusy}
+                onPress={() => void onDevConsumeTestCredit()}>
+                <Text style={styles.devButtonText}>{consumeBusy ? 'Working…' : 'Use 1 test credit'}</Text>
+              </Pressable>
+              {consumeMessage ? <Text style={styles.devMessage}>{consumeMessage}</Text> : null}
+            </View>
+          )}
+        </ScrollView>
       </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    alignItems: 'stretch',
-    padding: 24,
-    gap: 12,
     maxWidth: 440,
     width: '100%',
     alignSelf: 'center',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    gap: 12,
+    paddingBottom: 40,
   },
   creditsBanner: {
     width: '100%',
@@ -303,13 +383,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  bookList: {
-    maxHeight: 220,
-    width: '100%',
+  booksErrorBlock: {
+    gap: 12,
+    alignItems: 'stretch',
   },
-  bookListContent: {
+  retryButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#2f95dc',
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  emptyBooks: {
     gap: 10,
-    paddingBottom: 8,
+  },
+  emptyAddLink: {
+    alignSelf: 'flex-start',
+  },
+  emptyAddLinkText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2f95dc',
+  },
+  bookList: {
+    width: '100%',
+    gap: 10,
   },
   bookRow: {
     padding: 12,
@@ -320,6 +423,9 @@ const styles = StyleSheet.create({
   },
   bookRowFailed: {
     borderColor: 'rgba(192, 57, 43, 0.45)',
+  },
+  bookRowNotReady: {
+    opacity: 0.55,
   },
   bookTitle: {
     fontSize: 16,
