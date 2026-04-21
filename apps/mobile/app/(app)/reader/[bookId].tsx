@@ -177,6 +177,7 @@ export default function ReaderScreen() {
     fetchError,
     summarizeRetryError,
     summarizeRetryBusy,
+    summarizeOrchestrateError,
     prefetching,
     prefetchHangVisible,
     prefetchHangDeferred,
@@ -417,6 +418,19 @@ export default function ReaderScreen() {
           {fetchError ? (
             <View style={styles.banner}>
               <Text style={styles.bannerText}>{fetchError}</Text>
+            </View>
+          ) : null}
+
+          {summarizeOrchestrateError ? (
+            <View style={styles.banner}>
+              <Text style={styles.bannerText}>{summarizeOrchestrateError}</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={() => void reloadPrefetchWindow(settledPage)}
+                accessibilityRole="button"
+                accessibilityLabel="Retry summarization after fixing the issue">
+                <Text style={styles.secondaryBtnText}>Reload</Text>
+              </Pressable>
             </View>
           ) : null}
 

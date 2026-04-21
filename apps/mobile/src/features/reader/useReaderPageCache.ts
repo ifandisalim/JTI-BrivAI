@@ -47,6 +47,8 @@ export type UseReaderPageCacheResult = {
   /** JTI-149: extract + summarize-book-page, then refetch §4.3. */
   retryPage: (p: number) => Promise<void>;
   dismissPrefetchHang: () => void;
+  /** Auto `summarize-book-pages` drain stopped (hard error, insufficient credits, etc.); cleared on Reload / book change. */
+  summarizeOrchestrateError: string | null;
 };
 
 export function useReaderPageCache(
@@ -58,12 +60,15 @@ export function useReaderPageCache(
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [summarizeRetryError, setSummarizeRetryError] = useState<string | null>(null);
   const [summarizeRetryBusy, setSummarizeRetryBusy] = useState(false);
+  const [summarizeOrchestrateError, setSummarizeOrchestrateError] = useState<string | null>(null);
   const [prefetching, setPrefetching] = useState(false);
   const [hangDismissed, setHangDismissed] = useState(false);
   const [hangElapsed, setHangElapsed] = useState(false);
   const hangTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPrefetchIndicesRef = useRef<number[]>([]);
   const summarizeDrainInFlightRef = useRef(false);
+  /** When true, do not auto-start `summarize-book-pages` (avoids loops when RPC stays `pending` but server cannot progress). */
+  const summarizeAutoDrainDisabledRef = useRef(false);
   const bookIdRef = useRef(bookId);
   bookIdRef.current = bookId;
 
@@ -73,9 +78,11 @@ export function useReaderPageCache(
     setFetchError(null);
     setSummarizeRetryError(null);
     setSummarizeRetryBusy(false);
+    setSummarizeOrchestrateError(null);
     setHangDismissed(false);
     setHangElapsed(false);
     summarizeDrainInFlightRef.current = false;
+    summarizeAutoDrainDisabledRef.current = false;
     lastPrefetchIndicesRef.current = [];
   }, [bookId]);
 
@@ -115,8 +122,10 @@ export function useReaderPageCache(
   const inFlightRef = useRef(0);
 
   const runFetch = useCallback(
-    async (indices: number[]): Promise<void> => {
+    async (indices: number[], opts?: { allowSummarizeKickoff?: boolean }): Promise<void> => {
       if (!client || !bookId || indices.length === 0) return;
+
+      const allowSummarizeKickoff = opts?.allowSummarizeKickoff !== false;
 
       const t0 = Date.now();
       const sorted = uniqueSortedIndices(indices);
@@ -166,7 +175,12 @@ export function useReaderPageCache(
       const hasPending =
         data.pages.some((r) => r.status === 'pending') || hints.some((r) => r.status === 'pending');
 
-      if (hasPending && !summarizeDrainInFlightRef.current) {
+      if (
+        hasPending &&
+        allowSummarizeKickoff &&
+        !summarizeAutoDrainDisabledRef.current &&
+        !summarizeDrainInFlightRef.current
+      ) {
         const targetBookId = bookId;
         summarizeDrainInFlightRef.current = true;
         void (async () => {
@@ -179,15 +193,26 @@ export function useReaderPageCache(
                 ...(drain.ok ? { rounds: drain.rounds, stopped: drain.stopped_reason } : { message: drain.message }),
               });
             }
+            if (!drain.ok) {
+              summarizeAutoDrainDisabledRef.current = true;
+              setSummarizeOrchestrateError(drain.message);
+            } else if (drain.stopped_reason === 'insufficient_credits') {
+              summarizeAutoDrainDisabledRef.current = true;
+              setSummarizeOrchestrateError(
+                'Not enough credits to summarize more pages. Add credits, then tap Reload below.',
+              );
+            }
           } catch (e) {
             if (__DEV__) {
               console.warn('[reader] reader_summarize_drain_throw', e);
             }
+            summarizeAutoDrainDisabledRef.current = true;
+            setSummarizeOrchestrateError(e instanceof Error ? e.message : 'Summarization failed.');
           } finally {
             summarizeDrainInFlightRef.current = false;
           }
           if (bookIdRef.current === targetBookId) {
-            await runFetch(lastPrefetchIndicesRef.current);
+            await runFetch(lastPrefetchIndicesRef.current, { allowSummarizeKickoff: false });
           }
         })();
       }
@@ -228,6 +253,8 @@ export function useReaderPageCache(
 
   const reloadPrefetchWindow = useCallback(
     async (p: number) => {
+      summarizeAutoDrainDisabledRef.current = false;
+      setSummarizeOrchestrateError(null);
       setHangDismissed(false);
       await prefetchForSettledPage(p);
     },
@@ -237,6 +264,8 @@ export function useReaderPageCache(
   const retryPage = useCallback(
     async (p: number) => {
       if (!client || !bookId) return;
+      summarizeAutoDrainDisabledRef.current = false;
+      setSummarizeOrchestrateError(null);
       setSummarizeRetryError(null);
       setSummarizeRetryBusy(true);
       try {
@@ -270,6 +299,7 @@ export function useReaderPageCache(
       reloadPrefetchWindow,
       retryPage,
       dismissPrefetchHang,
+      summarizeOrchestrateError,
     }),
     [
       cache,
@@ -282,6 +312,7 @@ export function useReaderPageCache(
       prefetching,
       reloadPrefetchWindow,
       retryPage,
+      summarizeOrchestrateError,
       summarizeRetryBusy,
       summarizeRetryError,
     ],
