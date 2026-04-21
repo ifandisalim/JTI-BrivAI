@@ -9,9 +9,11 @@ import {
 } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
+import { useAuthSession } from '@/src/auth/authSession';
 import { BOOK_STATUS } from '@/src/config/books';
 import { CREDITS_PER_SUMMARIZED_PAGE } from '@/src/config/credits';
 import { useCreditBalance } from '@/src/hooks/useCreditBalance';
+import { resolveInitialPageIndexForLibraryOpen } from '@/src/lib/readingProgress';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
 
 const DEMO_BOOK_ID = 'test-book';
@@ -42,6 +44,7 @@ const DEV_CONSUME_KEY_PREFIX = 'dev:jti140:library:';
 type LoadBooksReason = 'focus' | 'pull';
 
 export default function LibraryScreen() {
+  const { session } = useAuthSession();
   const { balance, loadState, loadError, refresh } = useCreditBalance();
   const [consumeBusy, setConsumeBusy] = useState(false);
   const [consumeMessage, setConsumeMessage] = useState<string | null>(null);
@@ -243,7 +246,23 @@ export default function LibraryScreen() {
                     ]}
                     disabled={!canOpen}
                     onPress={() => {
-                      if (canOpen) router.push(`/reader/${b.id}`);
+                      if (!canOpen) return;
+                      const uid = session?.user?.id;
+                      void (async () => {
+                        const initial =
+                          uid !== undefined
+                            ? await resolveInitialPageIndexForLibraryOpen({
+                                userId: uid,
+                                bookId: b.id,
+                                pageCount: b.page_count,
+                                contentStartPageIndex: b.content_start_page_index,
+                              })
+                            : 1;
+                        router.push({
+                          pathname: '/reader/[bookId]',
+                          params: { bookId: b.id, initialPageIndex: String(initial) },
+                        });
+                      })();
                     }}>
                     <Text style={styles.bookTitle} numberOfLines={2}>
                       {b.title}
@@ -279,7 +298,22 @@ export default function LibraryScreen() {
             style={[styles.button, !canSummarize && styles.buttonDisabled]}
             disabled={!canSummarize}
             onPress={() => {
-              router.push(`/reader/${DEMO_BOOK_ID}`);
+              const uid = session?.user?.id;
+              void (async () => {
+                const initial =
+                  uid !== undefined
+                    ? await resolveInitialPageIndexForLibraryOpen({
+                        userId: uid,
+                        bookId: DEMO_BOOK_ID,
+                        pageCount: null,
+                        contentStartPageIndex: null,
+                      })
+                    : 1;
+                router.push({
+                  pathname: '/reader/[bookId]',
+                  params: { bookId: DEMO_BOOK_ID, initialPageIndex: String(initial) },
+                });
+              })();
             }}>
             <Text style={styles.buttonText}>Open reader ({DEMO_BOOK_ID})</Text>
           </Pressable>
