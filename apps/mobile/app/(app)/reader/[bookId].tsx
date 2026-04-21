@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, View } from '@/components/Themed';
 import { useAuthSession } from '@/src/auth/authSession';
 import { ReaderMarkdown } from '@/src/features/reader/ReaderMarkdown';
-import { flushReadingProgress, recordSettledPage } from '@/src/lib/readingProgress';
+import { flushReadingProgress, onReaderSettledPage } from '@/src/lib/readingProgress';
 import {
   READER_SWIPE_DISTANCE_PT,
   READER_SWIPE_FAIL_OFFSET_Y,
@@ -296,9 +296,21 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     if (!bookId || !userId) return;
-    recordSettledPage(userId, bookId, settledPage);
+    onReaderSettledPage(userId, bookId, settledPage);
     console.log('[reader] reader_settle_page', { book_id: bookId, page_index: settledPage });
   }, [bookId, userId, settledPage]);
+
+  /** Mandatory flush when leaving reader via back / tab switch (screen may stay mounted). library-epic-131 §4.3 */
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        const uid = userIdRef.current;
+        if (bookId && uid) {
+          void flushReadingProgress(uid, bookId);
+        }
+      };
+    }, [bookId]),
+  );
 
   useEffect(() => {
     return () => {

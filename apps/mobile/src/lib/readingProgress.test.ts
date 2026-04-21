@@ -10,14 +10,19 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
     getItem: vi.fn(),
     setItem: vi.fn(),
+    getAllKeys: vi.fn(),
+    removeItem: vi.fn(),
   },
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
+  forgetLastReadForUser,
   lastReadPageStorageKey,
+  onReaderSettledPage,
   readLastReadPageIndex,
+  recordSettledPage,
   resolveInitialPageIndexForLibraryOpen,
 } from '@/src/lib/readingProgress';
 
@@ -25,6 +30,8 @@ describe('readingProgress', () => {
   beforeEach(() => {
     vi.mocked(AsyncStorage.getItem).mockReset();
     vi.mocked(AsyncStorage.setItem).mockReset();
+    vi.mocked(AsyncStorage.getAllKeys).mockReset();
+    vi.mocked(AsyncStorage.removeItem).mockReset();
   });
 
   it('uses spec AsyncStorage key format', () => {
@@ -73,5 +80,21 @@ describe('readingProgress', () => {
       contentStartPageIndex: null,
     });
     expect(n).toBe(1);
+  });
+
+  it('onReaderSettledPage is recordSettledPage (reader-epic-130 §5)', () => {
+    expect(onReaderSettledPage).toBe(recordSettledPage);
+  });
+
+  it('forgetLastReadForUser removes AsyncStorage keys with user prefix', async () => {
+    vi.mocked(AsyncStorage.getAllKeys).mockResolvedValue([
+      'brivai:lastReadPage:v1:user-a:book-1',
+      'other:key',
+    ]);
+    vi.mocked(AsyncStorage.removeItem).mockResolvedValue(undefined);
+    await forgetLastReadForUser('user-a');
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(
+      'brivai:lastReadPage:v1:user-a:book-1',
+    );
   });
 });
