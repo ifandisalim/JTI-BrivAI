@@ -41,10 +41,10 @@ config/               — shared repo config (e.g. summaryPrompt.ts for Epic 129
 
 ## Repo snapshot (Brief AI / JTI-BrivAI)
 
-*Factual only — refresh when major milestones land. Last reviewed: **2026-04-19**.*
+*Factual only — refresh when major milestones land. Last reviewed: **2026-04-20**.*
 
 - **Product (repo name):** **JTI BrivAI** — Android-first Expo app → PDF upload (planned) → **one summary per PDF page** in plain English; ebook-style reading later. Public one-liner and runbook: root **`README.md`**.
-- **MVP contract:** Frozen defaults and epic list live in **`docs/specs/mvp/README.md`** (Android first, text PDF happy path, Mode A per-page summaries, magic link auth, credits-only economics, limits, Linear link). Detailed specs: **`docs/specs/mvp/foundation-epic-125.md`**, **`auth-epic-126.md`**, **`credits-epic-127.md`**.
+- **MVP contract:** Frozen defaults and epic list live in **`docs/specs/mvp/README.md`** (Android first, text PDF happy path, Mode A per-page summaries, magic link auth, credits-only economics, limits, Linear link). Detailed specs include **`foundation-epic-125.md`**, **`auth-epic-126.md`**, **`credits-epic-127.md`**, **`reader-epic-130.md`**, **`library-epic-131.md`**, **`summarization-epic-129.md`** (includes body-start **`S`**, JTI-157/158).
 - **Implemented in tree:** **`apps/mobile`** — Expo Router `(auth)` / `(app)`, magic link sign-in + **`app/auth/callback`**, session bootstrap and **`(app)` guard**, library with **credit balance** + out-of-credits UX + **dev-only** `consume_credit` test, reader placeholder **`reader/[bookId]`** (e.g. `test-book`). Supabase client: **`apps/mobile/src/lib/supabase.ts`**. Credit constants: **`apps/mobile/src/config/credits.ts`** (must stay aligned with SQL).
 - **Supabase:** Migrations under **`supabase/migrations/`** (profiles, credits ledger, `consume_credit`, follow-ups). **`apps/mobile/.env`** is local-only; **`.env.example`** is committed.
 - **Design / product inputs:** **`resources/BrivAI designs`**, **`resources/BrivAI Features`** (folders — check contents when UX or scope questions come up).
