@@ -2,6 +2,8 @@
 
 BrivAI is becoming a mobile app for uploading PDFs and reading **page-by-page summaries** (MVP scope grows in product specs). This repo currently holds the **Android-first Expo shell** and foundation work.
 
+**Full local setup (web + Android + Supabase + tests):** see [`docs/dev/local-setup-and-testing-playbook.md`](docs/dev/local-setup-and-testing-playbook.md) (JTI-159). This README stays the short entry; the playbook expands commands and checklists.
+
 ## Prerequisites
 
 Install these on the machine where you build and run the app:
