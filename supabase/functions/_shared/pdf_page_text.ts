@@ -116,6 +116,62 @@ export async function destroyLoadedPdf(pdf: LoadedPdfDocument): Promise<void> {
 /**
  * Same extraction rules as `extractTextFromPdfPage` but uses an already-loaded document.
  */
+/**
+ * Same extraction as `extractTextFromLoadedPdfPage` but **does not** reject short or
+ * likely-scanned pages — returns normalized text (possibly empty) for heuristics (JTI-157).
+ */
+export async function extractLooseTextFromLoadedPdfPage(args: {
+  pdf: LoadedPdfDocument;
+  pageIndex1Based: number;
+  maxPageIndex: number;
+}): Promise<
+  | { ok: true; text: string }
+  | { ok: false; error_code: string; error_message: string }
+> {
+  const { pdf, pageIndex1Based, maxPageIndex } = args;
+
+  if (!Number.isInteger(pageIndex1Based) || pageIndex1Based < 1) {
+    return {
+      ok: false,
+      error_code: 'invalid_page_index',
+      error_message: 'That page number is not valid for this book.',
+    };
+  }
+
+  if (!Number.isInteger(maxPageIndex) || maxPageIndex < 1 || pageIndex1Based > maxPageIndex) {
+    return {
+      ok: false,
+      error_code: 'page_out_of_range',
+      error_message: 'That page is not in this PDF. Pick a page within the book.',
+    };
+  }
+
+  try {
+    if (pageIndex1Based > pdf.numPages) {
+      return {
+        ok: false,
+        error_code: 'page_out_of_range',
+        error_message: 'That page is not in this PDF. Pick a page within the book.',
+      };
+    }
+
+    const page = await pdf.getPage(pageIndex1Based);
+    const textContent = await page.getTextContent();
+    const raw = textContent.items
+      .map((item) => ('str' in item && typeof item.str === 'string' ? item.str : ''))
+      .join(' ');
+    const normalized = normalizeExtractedPageText(raw);
+    return { ok: true, text: normalized };
+  } catch {
+    return {
+      ok: false,
+      error_code: 'extraction_failed',
+      error_message:
+        'We could not read text from this page. You can try again; if it keeps failing, this page may be image-only or scanned.',
+    };
+  }
+}
+
 export async function extractTextFromLoadedPdfPage(args: {
   pdf: LoadedPdfDocument;
   pageIndex1Based: number;
