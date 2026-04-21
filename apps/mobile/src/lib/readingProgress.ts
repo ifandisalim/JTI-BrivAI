@@ -61,6 +61,9 @@ export function recordSettledPage(userId: string | null, bookId: string, pageInd
   schedulePersist(key, rec);
 }
 
+/** reader-epic-130 §5 — same as `recordSettledPage`; use this name at the reader boundary. */
+export const onReaderSettledPage = recordSettledPage;
+
 export async function flushReadingProgress(userId: string, bookId: string): Promise<void> {
   const key = lastReadPageStorageKey(userId, bookId);
   const t = debounceTimers.get(key);
@@ -86,6 +89,34 @@ export async function flushAllReadingProgress(): Promise<void> {
   await Promise.all(
     toWrite.map(([key, rec]) => persistKey(key, rec)),
   );
+}
+
+const userKeyPrefix = (userId: string) => `${KEY_PREFIX}:${userId}:`;
+
+/**
+ * Clears in-memory queues and AsyncStorage keys for `brivai:lastReadPage:v1:<userId>:*`.
+ * Call on sign-out so another account on the same device does not inherit pending writes (library-epic-131 §7).
+ */
+export async function forgetLastReadForUser(userId: string): Promise<void> {
+  const prefix = userKeyPrefix(userId);
+  for (const key of pending.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    pending.delete(key);
+    const t = debounceTimers.get(key);
+    if (t !== undefined) {
+      clearTimeout(t);
+      debounceTimers.delete(key);
+    }
+  }
+  try {
+    const all = await AsyncStorage.getAllKeys();
+    const toRemove = all.filter((k) => k.startsWith(prefix));
+    await Promise.all(toRemove.map((k) => AsyncStorage.removeItem(k)));
+  } catch (e) {
+    if (__DEV__) {
+      console.warn('[readingProgress] forget_user_keys_failed', { message: String(e) });
+    }
+  }
 }
 
 function clampPageIndex(page: number, pageCount: number | null): number {

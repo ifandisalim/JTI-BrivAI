@@ -13,7 +13,7 @@ import { useAuthSession } from '@/src/auth/authSession';
 import { BOOK_STATUS } from '@/src/config/books';
 import { CREDITS_PER_SUMMARIZED_PAGE } from '@/src/config/credits';
 import { useCreditBalance } from '@/src/hooks/useCreditBalance';
-import { resolveInitialPageIndexForLibraryOpen } from '@/src/lib/readingProgress';
+import { forgetLastReadForUser, resolveInitialPageIndexForLibraryOpen } from '@/src/lib/readingProgress';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
 
 const DEMO_BOOK_ID = 'test-book';
@@ -108,11 +108,13 @@ export default function LibraryScreen() {
   );
 
   const onSignOut = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (uid) void forgetLastReadForUser(uid);
     if (supabase) {
       await supabase.auth.signOut();
     }
     router.replace('/sign-in');
-  }, []);
+  }, [session?.user?.id]);
 
   const canSummarize =
     loadState === 'ready' && balance !== null && balance >= CREDITS_PER_SUMMARIZED_PAGE;
