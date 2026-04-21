@@ -1,8 +1,8 @@
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
+import { File as ExpoFsFile } from 'expo-file-system';
 import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, Pressable, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Platform, Pressable, StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
 import { BOOK_MAX_BYTES, BOOK_PDFS_BUCKET, BOOK_STATUS, type BookStatus } from '@/src/config/books';
@@ -37,11 +37,22 @@ function newBookId(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-async function readPdfMagicOk(uri: string): Promise<boolean> {
-  const f = new File(uri);
-  const head = f.slice(0, 5);
-  const buf = await head.arrayBuffer();
-  const bytes = new Uint8Array(buf);
+/** expo-file-system's File class is a stub on web (no native validatePath); use fetch for blob/file picker URIs. */
+async function readPickerUriAsArrayBuffer(uri: string): Promise<ArrayBuffer> {
+  if (Platform.OS === 'web') {
+    const res = await fetch(uri);
+    if (!res.ok) {
+      throw new Error(`Could not read file (HTTP ${res.status})`);
+    }
+    return res.arrayBuffer();
+  }
+  const file = new ExpoFsFile(uri);
+  return file.arrayBuffer();
+}
+
+function pdfHeaderLooksLikePdf(buf: ArrayBuffer): boolean {
+  const n = Math.min(5, buf.byteLength);
+  const bytes = new Uint8Array(buf, 0, n);
   const magic = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
   if (bytes.length < magic.length) return false;
   for (let i = 0; i < magic.length; i++) {
@@ -118,8 +129,26 @@ export default function UploadPdfScreen() {
       return;
     }
 
-    const magicOk = await readPdfMagicOk(asset.uri);
-    if (!magicOk) {
+    let body: ArrayBuffer;
+    try {
+      body = await readPickerUriAsArrayBuffer(asset.uri);
+    } catch (e) {
+      const errText = e instanceof Error ? e.message : String(e);
+      setPhase('idle');
+      setMessage('Could not read this PDF.');
+      setDetail('Try again, or pick a different file. If the problem persists, start the upload again.');
+      if (__DEV__) console.warn('[upload-pdf] read failed', errText);
+      return;
+    }
+
+    if (body.byteLength > BOOK_MAX_BYTES) {
+      setPhase('idle');
+      setMessage('This PDF is over 50 MB.');
+      setDetail('Choose another PDF under 50 MB.');
+      return;
+    }
+
+    if (!pdfHeaderLooksLikePdf(body)) {
       setPhase('idle');
       setMessage('This file does not look like a real PDF.');
       setDetail('Choose another PDF from your library.');
@@ -129,7 +158,7 @@ export default function UploadPdfScreen() {
     const bookId = newBookId();
     const storagePath = `${userId}/${bookId}.pdf`;
     const title = titleFromPickerName(asset.name);
-    const byteSize = declaredSize ?? 0;
+    const byteSize = declaredSize && declaredSize > 0 ? declaredSize : body.byteLength;
 
     const { error: insertError } = await supabase.from('books').insert({
       id: bookId,
@@ -148,33 +177,6 @@ export default function UploadPdfScreen() {
       setDetail('Check that you are signed in, then try again. If this keeps happening, sign out and sign back in.');
       if (__DEV__) console.warn('[upload-pdf] books insert', insertError.message);
       return;
-    }
-
-    let body: ArrayBuffer;
-    try {
-      const file = new File(asset.uri);
-      body = await file.arrayBuffer();
-    } catch (e) {
-      const errText = e instanceof Error ? e.message : String(e);
-      await failBookRow(bookId, BOOK_STATUS.failed, 'Could not read this PDF from your device.', 'read_error');
-      setPhase('idle');
-      setMessage('Could not read this PDF.');
-      setDetail('Try again, or pick a different file. If the problem persists, start the upload again.');
-      if (__DEV__) console.warn('[upload-pdf] read failed', errText);
-      return;
-    }
-
-    if (body.byteLength > BOOK_MAX_BYTES) {
-      await failBookRow(bookId, BOOK_STATUS.failed, 'This PDF is over 50 MB.', 'too_large');
-      await removeStorageSilently(storagePath);
-      setPhase('idle');
-      setMessage('This PDF is over 50 MB.');
-      setDetail('Choose another PDF under 50 MB.');
-      return;
-    }
-
-    if (byteSize === 0) {
-      await supabase.from('books').update({ byte_size: body.byteLength }).eq('id', bookId);
     }
 
     const { error: uploadError } = await supabase.storage
