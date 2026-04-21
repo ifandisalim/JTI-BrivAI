@@ -1,6 +1,7 @@
 /**
  * JTI-146 + Epic 129 §3: Orchestrated Mode A summarization — processes multiple pages per call
- * in priority order (pages 1–10 before tail). Loads the PDF once; extract → summarize (with
+ * in priority order (**S…min(S+9, N)** first, then tail, then front matter). Loads the PDF once;
+ * extract → summarize (with
  * JTI-149 retries) → persist. Stops scheduling when credits are insufficient (§1.5 row 4).
  *
  * POST JSON: { book_id: string, max_pages?: number }
@@ -113,7 +114,7 @@ Deno.serve(async (req) => {
 
   const { data: book, error: bookErr } = await admin
     .from('books')
-    .select('id,user_id,storage_bucket,storage_path,status,page_count')
+    .select('id,user_id,storage_bucket,storage_path,status,page_count,content_start_page_index')
     .eq('id', bookId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -146,6 +147,11 @@ Deno.serve(async (req) => {
     );
   }
 
+  const contentStart =
+    typeof book.content_start_page_index === 'number' && Number.isInteger(book.content_start_page_index)
+      ? book.content_start_page_index
+      : 1;
+
   const { data: summaryRows, error: sumErr } = await admin
     .from('page_summaries')
     .select('page_index,status')
@@ -162,7 +168,7 @@ Deno.serve(async (req) => {
     if (Number.isInteger(pi)) statusByPage.set(pi, st);
   }
 
-  const scheduleOrder = buildSummarizationPageOrder(pageCount);
+  const scheduleOrder = buildSummarizationPageOrder(pageCount, contentStart);
   const pagesToDo: number[] = [];
   for (const p of scheduleOrder) {
     const st = statusByPage.get(p);

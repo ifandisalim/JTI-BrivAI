@@ -2,10 +2,19 @@
  * JTI-142 / JTI-143: Server-authoritative PDF validation after Storage upload.
  * Downloads the object with the service role, checks magic bytes + size, parses page count (pdf-lib),
  * then drives `books.status`: `uploading` | `validating` → `ready` or `failed` (see `pdf-upload-epic-128.md` §9.2).
- * Summarization may be triggered from DB/webhooks later (§9.3); this function only finalizes validation.
+ * After validation, runs JTI-157 hybrid content-start detection so `books.content_start_page_index`
+ * and `content_start_method` are set before summarization scheduling (same pipeline).
  */
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1';
+import {
+  type ContentStartResult,
+  detectContentStartHybrid,
+} from '../_shared/content_start_detection.ts';
+import {
+  destroyLoadedPdf,
+  openPdfFromBytes,
+} from '../_shared/pdf_page_text.ts';
 import { type PdfValidationFailure, validatePdfMagicAndSize, pageCountResult } from './pdf_limits.ts';
 
 const corsHeaders: Record<string, string> = {
@@ -178,12 +187,35 @@ Deno.serve(async (req) => {
     });
   }
 
+  const openaiKey = Deno.env.get('OPENAI_API_KEY') ?? '';
+  let contentStart: ContentStartResult = {
+    content_start_page_index: 1,
+    content_start_method: 'fallback_default',
+  };
+
+  const opened = await openPdfFromBytes(bytes);
+  if (opened.ok) {
+    try {
+      contentStart = await detectContentStartHybrid({
+        pdf: opened.pdf,
+        pageCount: pages.page_count,
+        openaiApiKey: openaiKey,
+      });
+    } catch {
+      contentStart = { content_start_page_index: 1, content_start_method: 'fallback_default' };
+    } finally {
+      await destroyLoadedPdf(opened.pdf);
+    }
+  }
+
   const { error: upErr } = await admin
     .from('books')
     .update({
       status: 'ready',
       page_count: pages.page_count,
       byte_size: bytes.byteLength,
+      content_start_page_index: contentStart.content_start_page_index,
+      content_start_method: contentStart.content_start_method,
       error_code: null,
       error_message: null,
     })
@@ -208,5 +240,7 @@ Deno.serve(async (req) => {
     success: true,
     page_count: pages.page_count,
     byte_size: bytes.byteLength,
+    content_start_page_index: contentStart.content_start_page_index,
+    content_start_method: contentStart.content_start_method,
   });
 });
