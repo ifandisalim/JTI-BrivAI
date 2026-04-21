@@ -25,7 +25,16 @@ function parseInitialPage(raw: string | string[] | undefined): number {
   return Math.floor(n);
 }
 
-function pageBodyForRow(row: PageSummaryReaderRow | undefined): ReactNode {
+function pageBodyForRow(
+  row: PageSummaryReaderRow | undefined,
+  ctx: {
+    pageCount: number | null;
+    onClampToValidPage: () => void;
+    onTryAgainSummarize: () => void;
+    retryBusy: boolean;
+    summarizeRetryFailedMessage: string | null;
+  },
+): ReactNode {
   if (!row) {
     return (
       <View style={styles.centerBlock}>
@@ -58,6 +67,7 @@ function pageBodyForRow(row: PageSummaryReaderRow | undefined): ReactNode {
         }
         return (
           <View style={styles.centerBlock}>
+            <ActivityIndicator />
             <Text style={styles.muted}>Still preparing this page…</Text>
           </View>
         );
@@ -67,18 +77,45 @@ function pageBodyForRow(row: PageSummaryReaderRow | undefined): ReactNode {
     case 'failed':
       return (
         <View style={styles.centerBlock}>
-          <Text style={styles.errorText}>{row.error_message ?? 'Something went wrong summarizing this page.'}</Text>
+          <Text style={styles.failedLead}>
+            {row.error_message ?? 'We could not summarize this page. You can try again.'}
+          </Text>
           {row.error_code ? (
             <Text style={styles.errorCode} selectable>
               {row.error_code}
             </Text>
           ) : null}
+          {ctx.summarizeRetryFailedMessage ? (
+            <Text style={styles.retryInlineError}>{ctx.summarizeRetryFailedMessage}</Text>
+          ) : null}
+          <Pressable
+            style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
+            onPress={ctx.onTryAgainSummarize}
+            disabled={ctx.retryBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Try summarizing this page again">
+            <Text style={styles.retryBtnText}>{ctx.retryBusy ? 'Trying…' : 'Try again'}</Text>
+          </Pressable>
         </View>
       );
     case 'invalid_page_index':
       return (
         <View style={styles.centerBlock}>
-          <Text style={styles.errorText}>This page is outside the book.</Text>
+          <Text style={styles.failedLead}>This page is outside the book.</Text>
+          <Text style={styles.muted}>
+            {ctx.pageCount !== null
+              ? `This book has ${ctx.pageCount} page${ctx.pageCount === 1 ? '' : 's'}.`
+              : 'Wait for the book to finish loading, or open a page in range.'}
+          </Text>
+          {ctx.pageCount !== null ? (
+            <Pressable
+              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+              onPress={ctx.onClampToValidPage}
+              accessibilityRole="button"
+              accessibilityLabel="Go to the nearest valid page">
+              <Text style={styles.secondaryBtnText}>Go to last page</Text>
+            </Pressable>
+          ) : null}
         </View>
       );
     default:
@@ -101,8 +138,19 @@ export default function ReaderScreen() {
   );
 
   const client = isSupabaseConfigured() ? supabase : null;
-  const { pageCount, cache, fetchError, prefetching, prefetchForSettledPage, retryPage } =
-    useReaderPageCache(client, bookId);
+  const {
+    pageCount,
+    cache,
+    fetchError,
+    summarizeRetryError,
+    prefetching,
+    prefetchHangVisible,
+    prefetchHangDeferred,
+    prefetchForSettledPage,
+    reloadPrefetchWindow,
+    retryPage,
+    dismissPrefetchHang,
+  } = useReaderPageCache(client, bookId);
 
   const [settledPage, setSettledPage] = useState(requestedInitial);
   const openedLogged = useRef(false);
@@ -150,9 +198,22 @@ export default function ReaderScreen() {
     setSettledPage((p) => Math.min(pageCount, p + 1));
   }, [pageCount]);
 
-  const onTryAgain = useCallback(() => {
+  const onTryAgainSummarize = useCallback(() => {
     void retryPage(settledPage);
   }, [retryPage, settledPage]);
+
+  const onClampInvalidToValidPage = useCallback(() => {
+    if (pageCount === null) return;
+    const rowNow = cache.get(settledPage);
+    if (!rowNow || rowNow.status !== 'invalid_page_index') return;
+    const pi = rowNow.page_index;
+    if (pi > pageCount) setSettledPage(pageCount);
+    else setSettledPage(1);
+  }, [cache, pageCount, settledPage]);
+
+  const onHangReload = useCallback(() => {
+    void reloadPrefetchWindow(settledPage);
+  }, [reloadPrefetchWindow, settledPage]);
 
   const pan = useMemo(
     () =>
@@ -177,7 +238,6 @@ export default function ReaderScreen() {
   );
 
   const row = cache.get(settledPage);
-  const showTryAgain = row?.status === 'failed';
 
   const pageLabel =
     pageCount === null ? `Page ${settledPage}` : `Page ${settledPage} of ${pageCount}`;
@@ -219,6 +279,39 @@ export default function ReaderScreen() {
             </View>
           ) : null}
 
+          {prefetchHangVisible ? (
+            <View style={styles.hangCard}>
+              <Text style={styles.hangTitle}>Still loading…</Text>
+              <Text style={styles.hangBody}>
+                This is taking longer than usual. You can keep waiting or cancel and try again.
+              </Text>
+              <View style={styles.hangActions}>
+                <Pressable
+                  style={({ pressed }) => [styles.hangBtn, pressed && styles.hangBtnPressed]}
+                  onPress={dismissPrefetchHang}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel loading wait">
+                  <Text style={styles.hangBtnText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {prefetchHangDeferred ? (
+            <View style={styles.hangCardMuted}>
+              <Text style={styles.hangBody}>
+                Loading was slow. Tap reload to fetch this page and the next few again.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={onHangReload}
+                accessibilityRole="button"
+                accessibilityLabel="Reload summaries for this page">
+                <Text style={styles.secondaryBtnText}>Reload</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <View
             style={styles.pageIndicator}
             accessible
@@ -239,17 +332,14 @@ export default function ReaderScreen() {
             contentContainerStyle={[styles.scrollContent, { minHeight: width }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator>
-            {pageBodyForRow(row)}
+            {pageBodyForRow(row, {
+              pageCount,
+              onClampToValidPage: onClampInvalidToValidPage,
+              onTryAgainSummarize,
+              retryBusy: prefetching,
+              summarizeRetryFailedMessage: summarizeRetryError,
+            })}
           </ScrollView>
-
-          {showTryAgain ? (
-            <Pressable
-              style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
-              onPress={onTryAgain}
-              disabled={prefetching}>
-              <Text style={styles.retryBtnText}>{prefetching ? 'Trying…' : 'Try again'}</Text>
-            </Pressable>
-          ) : null}
 
           <View style={styles.navRow}>
             <Pressable
@@ -304,6 +394,50 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
   },
+  hangCard: {
+    backgroundColor: 'rgba(47, 149, 220, 0.1)',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  hangCardMuted: {
+    backgroundColor: 'rgba(142, 142, 147, 0.12)',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  hangTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  hangBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    opacity: 0.85,
+  },
+  hangActions: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  hangBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(47, 149, 220, 0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  hangBtnPressed: {
+    opacity: 0.85,
+  },
+  hangBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
   bannerText: {
     fontSize: 14,
   },
@@ -334,9 +468,15 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     opacity: 0.75,
   },
-  errorText: {
+  failedLead: {
     fontSize: 16,
     lineHeight: 24,
+  },
+  retryInlineError: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#c0392b',
+    marginTop: 4,
   },
   errorCode: {
     fontSize: 12,
@@ -359,6 +499,23 @@ const styles = StyleSheet.create({
   },
   retryBtnText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(142, 142, 147, 0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  secondaryBtnPressed: {
+    opacity: 0.85,
+  },
+  secondaryBtnText: {
     fontSize: 16,
     fontWeight: '600',
   },
