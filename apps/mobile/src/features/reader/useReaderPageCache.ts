@@ -2,10 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { retrySummarizePageWithExtract } from '@/src/lib/readerRetrySummarize';
 import {
   fetchPageSummariesForReader,
   type PageSummaryReaderRow,
 } from '@/src/lib/pageSummariesReader';
+
+/** §10.2 reader-epic-130: soft hang if RPC has no response for this long. */
+export const READER_PREFETCH_HANG_MS = 30_000;
 
 function uniqueSortedIndices(indices: number[]): number[] {
   return [...new Set(indices)].sort((a, b) => a - b);
@@ -36,11 +40,19 @@ export type UseReaderPageCacheResult = {
   pageCount: number | null;
   cache: Map<number, PageSummaryReaderRow>;
   fetchError: string | null;
+  summarizeRetryError: string | null;
   prefetching: boolean;
+  /** §10.2 — true after 30s prefetch with no completion; dismiss with cancelHang. */
+  prefetchHangVisible: boolean;
+  /** After cancel, still waiting on network — show Reload to refetch window. */
+  prefetchHangDeferred: boolean;
   /** Run §4.2 window for current p (and merge). */
   prefetchForSettledPage: (p: number) => Promise<void>;
-  /** Refetch single page (failed retry) then re-run window. */
+  /** §10.2 — explicit refetch after hang cancel (may overlap in-flight RPC; merges by page_index). */
+  reloadPrefetchWindow: (p: number) => Promise<void>;
+  /** JTI-149: extract + summarize-book-page, then refetch §4.3. */
   retryPage: (p: number) => Promise<void>;
+  dismissPrefetchHang: () => void;
 };
 
 export function useReaderPageCache(
@@ -50,13 +62,50 @@ export function useReaderPageCache(
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [cache, setCache] = useState<Map<number, PageSummaryReaderRow>>(() => new Map());
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [summarizeRetryError, setSummarizeRetryError] = useState<string | null>(null);
   const [prefetching, setPrefetching] = useState(false);
+  const [hangDismissed, setHangDismissed] = useState(false);
+  const [hangElapsed, setHangElapsed] = useState(false);
+  const hangTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setPageCount(null);
     setCache(new Map());
     setFetchError(null);
+    setSummarizeRetryError(null);
+    setHangDismissed(false);
+    setHangElapsed(false);
   }, [bookId]);
+
+  useEffect(() => {
+    if (hangTimerRef.current) {
+      clearTimeout(hangTimerRef.current);
+      hangTimerRef.current = null;
+    }
+
+    if (!prefetching) {
+      setHangElapsed(false);
+      setHangDismissed(false);
+      return;
+    }
+
+    setHangDismissed(false);
+    setHangElapsed(false);
+    hangTimerRef.current = setTimeout(() => {
+      setHangElapsed(true);
+    }, READER_PREFETCH_HANG_MS);
+
+    return () => {
+      if (hangTimerRef.current) {
+        clearTimeout(hangTimerRef.current);
+        hangTimerRef.current = null;
+      }
+    };
+  }, [prefetching]);
+
+  const dismissPrefetchHang = useCallback(() => {
+    setHangDismissed(true);
+  }, []);
 
   const pageCountRef = useRef<number | null>(null);
   pageCountRef.current = pageCount;
@@ -144,12 +193,25 @@ export function useReaderPageCache(
     [bookId, client, runFetch],
   );
 
+  const reloadPrefetchWindow = useCallback(
+    async (p: number) => {
+      setHangDismissed(false);
+      await prefetchForSettledPage(p);
+    },
+    [prefetchForSettledPage],
+  );
+
   const retryPage = useCallback(
     async (p: number) => {
       if (!client || !bookId) return;
+      setSummarizeRetryError(null);
       inFlightRef.current += 1;
       setPrefetching(true);
       try {
+        const invoke = await retrySummarizePageWithExtract(client, bookId, p);
+        if (!invoke.ok) {
+          setSummarizeRetryError(invoke.message);
+        }
         await runFetch([p]);
         await runFetch(windowIndicesFromP(p, pageCountRef.current));
       } finally {
@@ -163,15 +225,35 @@ export function useReaderPageCache(
     [bookId, client, runFetch],
   );
 
+  const prefetchHangVisible = prefetching && hangElapsed && !hangDismissed;
+  const prefetchHangDeferred = prefetching && hangDismissed;
+
   return useMemo(
     () => ({
       pageCount,
       cache,
       fetchError,
+      summarizeRetryError,
       prefetching,
+      prefetchHangVisible,
+      prefetchHangDeferred,
       prefetchForSettledPage,
+      reloadPrefetchWindow,
       retryPage,
+      dismissPrefetchHang,
     }),
-    [cache, fetchError, pageCount, prefetchForSettledPage, prefetching, retryPage],
+    [
+      cache,
+      dismissPrefetchHang,
+      fetchError,
+      pageCount,
+      prefetchForSettledPage,
+      prefetchHangDeferred,
+      prefetchHangVisible,
+      prefetching,
+      reloadPrefetchWindow,
+      retryPage,
+      summarizeRetryError,
+    ],
   );
 }
