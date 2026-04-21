@@ -8,6 +8,7 @@ import {
   fetchPageSummariesForReader,
   type PageSummaryReaderRow,
 } from '@/src/lib/pageSummariesReader';
+import { drainSummarizeBookPagesBatches } from '@/src/lib/summarizeBookPagesDrain';
 
 /** §10.2 reader-epic-130: soft hang if RPC has no response for this long. */
 export const READER_PREFETCH_HANG_MS = 30_000;
@@ -61,6 +62,10 @@ export function useReaderPageCache(
   const [hangDismissed, setHangDismissed] = useState(false);
   const [hangElapsed, setHangElapsed] = useState(false);
   const hangTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPrefetchIndicesRef = useRef<number[]>([]);
+  const summarizeDrainInFlightRef = useRef(false);
+  const bookIdRef = useRef(bookId);
+  bookIdRef.current = bookId;
 
   useEffect(() => {
     setPageCount(null);
@@ -70,6 +75,8 @@ export function useReaderPageCache(
     setSummarizeRetryBusy(false);
     setHangDismissed(false);
     setHangElapsed(false);
+    summarizeDrainInFlightRef.current = false;
+    lastPrefetchIndicesRef.current = [];
   }, [bookId]);
 
   useEffect(() => {
@@ -113,6 +120,7 @@ export function useReaderPageCache(
 
       const t0 = Date.now();
       const sorted = uniqueSortedIndices(indices);
+      lastPrefetchIndicesRef.current = sorted;
       const { data, error } = await fetchPageSummariesForReader(client, bookId, sorted);
 
       if (error || !data) {
@@ -153,6 +161,36 @@ export function useReaderPageCache(
         next = mergeRows(next, data.next_page_hints);
         return next;
       });
+
+      const hints = data.next_page_hints ?? [];
+      const hasPending =
+        data.pages.some((r) => r.status === 'pending') || hints.some((r) => r.status === 'pending');
+
+      if (hasPending && !summarizeDrainInFlightRef.current) {
+        const targetBookId = bookId;
+        summarizeDrainInFlightRef.current = true;
+        void (async () => {
+          try {
+            const drain = await drainSummarizeBookPagesBatches(client, targetBookId);
+            if (__DEV__) {
+              console.log('[reader] reader_summarize_drain', {
+                book_id: targetBookId,
+                ok: drain.ok,
+                ...(drain.ok ? { rounds: drain.rounds, stopped: drain.stopped_reason } : { message: drain.message }),
+              });
+            }
+          } catch (e) {
+            if (__DEV__) {
+              console.warn('[reader] reader_summarize_drain_throw', e);
+            }
+          } finally {
+            summarizeDrainInFlightRef.current = false;
+          }
+          if (bookIdRef.current === targetBookId) {
+            await runFetch(lastPrefetchIndicesRef.current);
+          }
+        })();
+      }
 
       if (__DEV__) {
         console.log('[reader] reader_prefetch_batch', {
