@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, View } from '@/components/Themed';
 import { useAuthSession } from '@/src/auth/authSession';
 import { ReaderMarkdown } from '@/src/features/reader/ReaderMarkdown';
-import { onReaderSettledPage, onReaderUnmount } from '@/src/features/reader/readingProgressStub';
+import { flushReadingProgress, recordSettledPage } from '@/src/lib/readingProgress';
 import {
   READER_SWIPE_DISTANCE_PT,
   READER_SWIPE_FAIL_OFFSET_Y,
@@ -189,6 +189,8 @@ export default function ReaderScreen() {
   const [settledPage, setSettledPage] = useState(requestedInitial);
   const openedLogged = useRef(false);
   const contentStartToastShown = useRef(false);
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
 
   useEffect(() => {
     setBookOpenMeta(null);
@@ -293,18 +295,19 @@ export default function ReaderScreen() {
   }, [bookId, bookOpenMeta, userId]);
 
   useEffect(() => {
-    if (!bookId) return;
-    onReaderSettledPage(bookId, settledPage);
+    if (!bookId || !userId) return;
+    recordSettledPage(userId, bookId, settledPage);
     console.log('[reader] reader_settle_page', { book_id: bookId, page_index: settledPage });
-  }, [bookId, settledPage]);
+  }, [bookId, userId, settledPage]);
 
   useEffect(() => {
     return () => {
-      if (bookId) {
-        onReaderUnmount(bookId, settledPage);
+      const uid = userIdRef.current;
+      if (bookId && uid) {
+        void flushReadingProgress(uid, bookId);
       }
     };
-  }, [bookId, settledPage]);
+  }, [bookId]);
 
   useEffect(() => {
     if (!client || !bookId) return;
