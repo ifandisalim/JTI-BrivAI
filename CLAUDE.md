@@ -29,6 +29,8 @@ Keep the user moving through that loop. If there is no goal yet, help set one. I
 02 Projects/          — one folder per project
 .cursor/skills/       — Cursor skill definitions (e.g. end-of-day, good-morning)
 config/               — shared repo config (e.g. summaryPrompt.ts for Epic 129 summarization copy)
+docs/dev/             — developer runbooks (local setup/testing and local-first startup flow)
+local-dev-*.ps1       — PowerShell helpers to start/stop local backend + mobile dev loop
 ```
 
 ---

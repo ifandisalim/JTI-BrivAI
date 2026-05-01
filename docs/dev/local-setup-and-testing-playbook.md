@@ -2,6 +2,8 @@
 
 Point-form **English** instructions to set up this repo, configure **Supabase** and **env**, run **automated tests**, and smoke-test in the **browser** and on **Android** (emulator or phone) before production deploy.
 
+For a local-first Windows flow with one-command startup scripts, see `[local-first-runbook.md](./local-first-runbook.md)`.
+
 **Canonical references:** root `[README.md](../../README.md)`, `[apps/mobile/.env.example](../../apps/mobile/.env.example)`, [MVP index](../specs/mvp/README.md).
 
 ---

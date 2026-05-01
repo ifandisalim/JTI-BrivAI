@@ -9,3 +9,6 @@ npm-debug.log*
 # Env (never commit secrets)
 .env
 .env.local
+
+# Local dev helper runtime files
+.local-dev/
